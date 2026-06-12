@@ -33,6 +33,13 @@
       "pinDigests": true
     },
     {
+      // pinDigests is not applicable to github-releases in plain version strings
+      // and causes "tag not found" errors due to extractVersionTemplate stripping the v prefix
+      "matchManagers": ["custom.regex"],
+      "matchDatasources": ["github-releases"],
+      "pinDigests": false
+    },
+    {
       // Group all opengrep updates into one PR
       "matchManagers": ["custom.regex"],
       "matchDepNames": ["opengrep/opengrep"],
