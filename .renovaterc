@@ -6,8 +6,7 @@
   "extends": [
     "config:recommended",
     ":semanticCommits",
-    ":semanticCommitTypeAll(chore)",
-    "group:allNonMajor"
+    ":semanticCommitTypeAll(chore)"
   ],
   "labels": ["dependencies"],
   "minimumReleaseAge": "1 day",
