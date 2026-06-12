@@ -16,7 +16,7 @@ pre-commit:
     gitleaks:
       run: >-
         podman run --rm -v "$(pwd):/repo:Z" -w /repo
-        docker.io/zricethezav/gitleaks:v8.29.0@sha256:507de9682470025fb3e7f57fe4c4ca8263d81369e027b6538b8a252a9c0371d4
+        docker.io/zricethezav/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
         protect --staged --config .gitleaks.toml
     actionlint:
       glob: ".github/workflows/*.yml"
