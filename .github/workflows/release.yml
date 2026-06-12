@@ -19,7 +19,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check-ci:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-slim
+    timeout-minutes: 15
+    permissions:
+      actions: read
+    steps:
+      - name: Wait for CI to pass on HEAD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="${{ github.sha }}"
+          echo "Waiting for CI workflow to succeed on ${sha}..."
+          for i in $(seq 1 60); do
+            run_json=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=1" \
+              --jq '.workflow_runs[0] // empty')
+
+            if [ -z "$run_json" ]; then
+              echo "Attempt ${i}: no CI run found yet, waiting..."
+              sleep 15
+              continue
+            fi
+
+            status=$(echo "$run_json" | jq -r '.status')
+            conclusion=$(echo "$run_json" | jq -r '.conclusion')
+            echo "Attempt ${i}: status=${status}, conclusion=${conclusion}"
+
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "CI passed!"
+                exit 0
+              else
+                echo "::error::CI finished with conclusion: ${conclusion}"
+                exit 1
+              fi
+            fi
+
+            sleep 15
+          done
+
+          echo "::error::Timed out waiting for CI (15 min)"
+          exit 1
+
   release:
+    needs: check-ci
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-slim
     timeout-minutes: 30
