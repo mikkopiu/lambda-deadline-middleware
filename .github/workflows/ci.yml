@@ -293,7 +293,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
-    needs: [lint, typecheck, test, bench, sast, sca, actionlint]
+    needs: deps
     runs-on: ubuntu-slim
     permissions:
       contents: read
