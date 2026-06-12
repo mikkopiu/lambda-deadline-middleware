@@ -9,7 +9,7 @@
     ":semanticCommitTypeAll(chore)"
   ],
   "labels": ["dependencies"],
-  "minimumReleaseAge": "1 day",
+  "minimumReleaseAge": "3 days",
   "schedule": ["every weekend"],
   "packageRules": [
     {
