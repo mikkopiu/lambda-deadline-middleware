@@ -22,6 +22,12 @@
       "commitMessagePrefix": "chore(deps):"
     },
     {
+      "matchManagers": ["npm"],
+      "matchDepNames": ["pnpm"],
+      "description": "pnpm requires manual update via `corepack use pnpm@latest` to include integrity hash",
+      "enabled": false
+    },
+    {
       "matchManagers": ["custom.regex"],
       "commitMessagePrefix": "chore(deps):",
       "pinDigests": true
