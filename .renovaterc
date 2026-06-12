@@ -75,11 +75,11 @@
         "/lefthook\\.yml$/"
       ],
       "matchStrings": [
-        "docker\\.io/zricethezav/gitleaks:v(?<currentValue>[0-9.]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+        "docker\\.io/zricethezav/gitleaks:(?<currentValue>v[0-9.]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
       "depNameTemplate": "docker.io/zricethezav/gitleaks",
       "datasourceTemplate": "docker",
-      "versioningTemplate": "semver"
+      "versioningTemplate": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"
     },
     {
       "customType": "regex",
