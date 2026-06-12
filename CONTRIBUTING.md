@@ -209,7 +209,7 @@ in CI. The `packageManager` field in `package.json` pins the exact pnpm version 
 ### Tracking and updates
 
 [Renovate](https://docs.renovatebot.com/) opens automated PRs weekly for dependency updates. Configuration is in
-`renovate.json5`. Key policies:
+`.renovaterc`. Key policies:
 
 - **Minimum release age**: 1 day (avoids publishing accidents)
 - **GitHub Actions**: Pinned by digest, updated automatically
