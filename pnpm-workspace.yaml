@@ -2,7 +2,5 @@ allowBuilds:
   esbuild: true
   lefthook: true
 
-minimumReleaseAgeExclude:
-  - qs@6.15.2
-
+minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true
