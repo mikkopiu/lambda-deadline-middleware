@@ -217,6 +217,25 @@ in CI. The `packageManager` field in `package.json` pins the exact pnpm version 
 
 All dependency update PRs must pass the full CI pipeline before merge.
 
+## Releasing
+
+Releases are **manual**. Merging to `main` does not publish a new version automatically.
+
+When you're ready to release:
+
+1. Go to **Actions → Release → Run workflow** (select `main` branch)
+2. Optionally enable "Run without publishing" for a dry run
+3. The workflow runs the full build/test pipeline, then [semantic-release](https://github.com/semantic-release/semantic-release) determines the version bump from all commits since the last release tag
+
+semantic-release uses Conventional Commits to decide what to publish:
+
+- `feat` → minor bump
+- `fix` / `perf` / `revert` → patch bump
+- `BREAKING CHANGE` or `!` suffix → major bump
+- `docs` / `chore` / `ci` / `test` → no release
+
+If no release-triggering commits exist since the last tag, the workflow exits without publishing.
+
 ## External Services
 
 | Service           | Purpose                      | Blocking?             |
