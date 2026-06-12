@@ -57,7 +57,10 @@
     {
       "customType": "regex",
       "description": "actionlint container image (local dev)",
-      "fileMatch": ["lefthook\\.yml$", "package\\.json$"],
+      "managerFilePatterns": [
+        "/lefthook\\.yml$/",
+        "/package\\.json$/"
+      ],
       "matchStrings": [
         "docker\\.io/rhysd/actionlint:(?<currentValue>[0-9.]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
@@ -68,7 +71,9 @@
     {
       "customType": "regex",
       "description": "gitleaks container image (local dev)",
-      "fileMatch": ["lefthook\\.yml$"],
+      "managerFilePatterns": [
+        "/lefthook\\.yml$/"
+      ],
       "matchStrings": [
         "docker\\.io/zricethezav/gitleaks:v(?<currentValue>[0-9.]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
@@ -79,7 +84,9 @@
     {
       "customType": "regex",
       "description": "Trivy container image (local dev)",
-      "fileMatch": ["package\\.json$"],
+      "managerFilePatterns": [
+        "/package\\.json$/"
+      ],
       "matchStrings": [
         "ghcr\\.io/aquasecurity/trivy:(?<currentValue>[0-9.]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
@@ -92,7 +99,9 @@
     {
       "customType": "regex",
       "description": "Actionlint version in CI workflow",
-      "fileMatch": ["\\.github/workflows/.*\\.yml$"],
+      "managerFilePatterns": [
+        "/\\.github/workflows/.*\\.yml$/"
+      ],
       "matchStrings": ["ACTIONLINT_VERSION:\\s*\"(?<currentValue>[0-9.]+)\""],
       "depNameTemplate": "rhysd/actionlint",
       "datasourceTemplate": "github-releases",
@@ -104,7 +113,9 @@
     {
       "customType": "regex",
       "description": "Opengrep version in ensure-opengrep.sh",
-      "fileMatch": ["scripts/ensure-opengrep\\.sh$"],
+      "managerFilePatterns": [
+        "/scripts/ensure-opengrep\\.sh$/"
+      ],
       "matchStrings": ["EXPECTED_VERSION=\"(?<currentValue>[0-9.]+)\""],
       "depNameTemplate": "opengrep/opengrep",
       "datasourceTemplate": "github-releases",
@@ -116,7 +127,9 @@
     {
       "customType": "regex",
       "description": "Opengrep version in security-insights.yml",
-      "fileMatch": ["security-insights\\.yml$"],
+      "managerFilePatterns": [
+        "/security-insights\\.yml$/"
+      ],
       "matchStrings": ["- name: Opengrep[\\s\\S]*?version:\\s*\"(?<currentValue>[0-9.]+)\""],
       "depNameTemplate": "opengrep/opengrep",
       "datasourceTemplate": "github-releases",
@@ -126,7 +139,9 @@
     {
       "customType": "regex",
       "description": "Trivy version in security-insights.yml",
-      "fileMatch": ["security-insights\\.yml$"],
+      "managerFilePatterns": [
+        "/security-insights\\.yml$/"
+      ],
       "matchStrings": ["- name: Trivy[\\s\\S]*?version:\\s*\"(?<currentValue>[0-9.]+)\""],
       "depNameTemplate": "aquasecurity/trivy",
       "datasourceTemplate": "github-releases",
@@ -136,7 +151,9 @@
     {
       "customType": "regex",
       "description": "Actionlint version in security-insights.yml",
-      "fileMatch": ["security-insights\\.yml$"],
+      "managerFilePatterns": [
+        "/security-insights\\.yml$/"
+      ],
       "matchStrings": ["- name: Actionlint[\\s\\S]*?version:\\s*\"(?<currentValue>[0-9.]+)\""],
       "depNameTemplate": "rhysd/actionlint",
       "datasourceTemplate": "github-releases",
@@ -146,7 +163,9 @@
     {
       "customType": "regex",
       "description": "Gitleaks version in security-insights.yml",
-      "fileMatch": ["security-insights\\.yml$"],
+      "managerFilePatterns": [
+        "/security-insights\\.yml$/"
+      ],
       "matchStrings": ["- name: Gitleaks[\\s\\S]*?version:\\s*\"(?<currentValue>[0-9.]+)\""],
       "depNameTemplate": "gitleaks/gitleaks",
       "datasourceTemplate": "github-releases",
