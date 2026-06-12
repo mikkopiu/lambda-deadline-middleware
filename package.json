@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "description": "AWS SDK v3 middleware for automatic Lambda deadline propagation via AbortController-based timeouts",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mikkopiu/lambda-deadline-middleware"
+  },
   "files": [
     "dist",
     "src",
