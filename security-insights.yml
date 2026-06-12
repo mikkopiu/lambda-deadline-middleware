@@ -1,0 +1,308 @@
+# SPDX-FileCopyrightText: 2026 lambda-deadline-middleware contributors
+# SPDX-License-Identifier: MIT
+
+# Security Insights v2.2.0
+# Specification: https://security-insights.openssf.org/schema.html
+
+header:
+  schema-version: 2.2.0
+  last-updated: "2026-06-12"
+  last-reviewed: "2026-06-12"
+  url: https://raw.githubusercontent.com/mikkopiu/lambda-deadline-middleware/main/security-insights.yml
+  comment: >-
+    Zero-dependency AWS SDK v3 middleware for automatic Lambda deadline
+    propagation. This file documents the project's security practices in a
+    machine-processable format per the OpenSSF Security Insights specification.
+
+project:
+  name: lambda-deadline-middleware
+  homepage: https://github.com/mikkopiu/lambda-deadline-middleware
+  roadmap: https://github.com/mikkopiu/lambda-deadline-middleware/milestones
+
+  administrators:
+    - name: Mikko Piuhola
+      primary: true
+      social: https://github.com/mikkopiu
+
+  repositories:
+    - name: lambda-deadline-middleware
+      url: https://github.com/mikkopiu/lambda-deadline-middleware
+      comment: Primary repository containing library source, tests, CI, and attestation configuration.
+
+  vulnerability-reporting:
+    reports-accepted: true
+    bug-bounty-available: false
+    comment: >-
+      Report vulnerabilities via GitHub Security Advisories on the repository.
+      Do not file public issues for security vulnerabilities.
+    policy: https://github.com/mikkopiu/lambda-deadline-middleware/blob/main/SECURITY.md
+
+  documentation:
+    detailed-guide: https://github.com/mikkopiu/lambda-deadline-middleware/blob/main/ARCHITECTURE.md
+    quickstart-guide: https://github.com/mikkopiu/lambda-deadline-middleware/blob/main/README.md
+    release-process: https://github.com/mikkopiu/lambda-deadline-middleware/blob/main/.github/workflows/release.yml
+    signature-verification: https://github.com/mikkopiu/lambda-deadline-middleware/blob/main/SECURITY.md
+
+repository:
+  url: https://github.com/mikkopiu/lambda-deadline-middleware
+  status: active
+  bug-fixes-only: false
+  accepts-change-request: true
+  accepts-automated-change-request: true
+  no-third-party-packages: true
+
+  core-team:
+    - name: Mikko Piuhola
+      primary: true
+      social: https://github.com/mikkopiu
+
+  license:
+    url: https://raw.githubusercontent.com/mikkopiu/lambda-deadline-middleware/main/LICENSE
+    expression: MIT
+
+  release:
+    automated-pipeline: true
+    changelog: https://github.com/mikkopiu/lambda-deadline-middleware/releases
+    distribution-points:
+      - uri: https://github.com/mikkopiu/lambda-deadline-middleware/releases
+        comment: GitHub Releases with SBOM and provenance attestations attached as assets.
+      - uri: https://www.npmjs.com/package/lambda-deadline-middleware
+        comment: npm registry with trusted publishing (OIDC) and sigstore provenance.
+
+    attestations:
+      - name: SLSA Provenance
+        location: https://www.npmjs.com/package/lambda-deadline-middleware
+        predicate-uri: https://slsa.dev/provenance/v1
+        comment: >-
+          SLSA Level 3 provenance generated automatically via npm trusted
+          publishing (OIDC). No long-lived NPM_TOKEN required. Verify with
+          "npm audit signatures".
+
+      - name: CycloneDX SBOM
+        location: https://github.com/mikkopiu/lambda-deadline-middleware/releases
+        predicate-uri: https://cyclonedx.org/bom/1.5
+        comment: >-
+          CycloneDX v1.5 JSON SBOM attached to each GitHub Release, generated
+          via "pnpm sbom".
+
+  documentation:
+    contributing-guide: https://github.com/mikkopiu/lambda-deadline-middleware/blob/main/CONTRIBUTING.md
+    security-policy: https://github.com/mikkopiu/lambda-deadline-middleware/blob/main/SECURITY.md
+
+  security:
+    assessments:
+      self:
+        comment: >-
+          Supply chain integrity verified through npm trusted publishing (OIDC,
+          no long-lived tokens), SLSA L3 provenance, and CycloneDX SBOM. SAST
+          coverage provided by Opengrep (pattern-based) and oxlint
+          (rule-based). SCA coverage provided by Trivy (dependency
+          vulnerability scanning) and Renovate (automated dependency updates).
+          CI/CD workflow correctness validated by actionlint. No formal
+          third-party security audit has been conducted.
+        date: "2026-06-12"
+
+    tools:
+      - name: Opengrep
+        type: SAST
+        version: "1.22.0"
+        rulesets:
+          - p/typescript
+          - p/security-audit
+          - p/owasp-top-ten
+        features:
+          - intrafile cross-function taint analysis (--taint-intrafile)
+        integration:
+          adhoc: true
+          ci: true
+          release: true
+        results:
+          ci:
+            name: Opengrep SAST scan
+            location: https://github.com/mikkopiu/lambda-deadline-middleware/actions
+            predicate-uri: https://github.com/opengrep/opengrep
+            comment: >-
+              SAST scanning with Opengrep (MIT/LGPL-2.1 Semgrep CE fork).
+              Auto-installed via scripts/ensure-opengrep.sh with sigstore
+              cosign verification. Same script used locally and in CI.
+              SARIF results uploaded to GitHub Code Scanning for inline PR
+              annotations and Security tab visibility.
+        comment: >-
+          Pattern-based SAST scanner using community-maintained rules covering
+          OWASP Top 10, TypeScript-specific security patterns, and injection
+          vulnerabilities. Runs with intrafile cross-function taint analysis
+          for deeper data-flow tracking. Opengrep is a community-governed fork
+          of Semgrep CE with no vendor lock-in.
+
+      - name: Trivy
+        type: SCA
+        version: "0.71.0"
+        rulesets:
+          - default
+        integration:
+          adhoc: true
+          ci: true
+          release: true
+        results:
+          ci:
+            name: Trivy SCA vulnerability scan
+            location: https://github.com/mikkopiu/lambda-deadline-middleware/actions
+            predicate-uri: https://trivy.dev
+            comment: >-
+              SCA scanning pnpm-lock.yaml for known CVEs in dependencies.
+              Runs via aquasecurity/trivy-action pinned by SHA (post-remediation
+              v0.36.0, immutable release with verified commit signature).
+              Fails CI on HIGH/CRITICAL severity findings. SARIF results
+              uploaded to GitHub Code Scanning for inline PR annotations and
+              Security tab visibility.
+        comment: >-
+          Aqua Security Trivy provides vulnerability scanning for dependencies
+          (SCA). Scans pnpm-lock.yaml against NVD, OSV, and vendor advisory
+          databases. CI uses SHA-pinned trivy-action; local dev uses
+          digest-pinned container image (ghcr.io/aquasecurity/trivy).
+
+      - name: Actionlint
+        type: SAST
+        version: "1.7.12"
+        rulesets:
+          - default
+        integration:
+          adhoc: true
+          ci: true
+          release: false
+        results:
+          ci:
+            name: Actionlint workflow validation
+            location: https://github.com/mikkopiu/lambda-deadline-middleware/actions
+            predicate-uri: https://github.com/rhysd/actionlint
+            comment: >-
+              Static analysis of GitHub Actions workflow YAML files. Binary
+              downloaded from GitHub Release and verified via gh attestation
+              verify (SLSA provenance). Locally runs as digest-pinned container.
+        comment: >-
+          Static checker for GitHub Actions workflow files. Validates workflow
+          syntax, expression correctness, action version references, and shell
+          script safety. Runs locally via pre-commit hook and in CI.
+
+      - name: Gitleaks
+        type: secret
+        version: "8.29.0"
+        rulesets:
+          - default
+        integration:
+          adhoc: true
+          ci: true
+          release: false
+        results:
+          ci:
+            name: Gitleaks CI scan
+            location: https://github.com/mikkopiu/lambda-deadline-middleware/actions
+            predicate-uri: https://github.com/gitleaks/gitleaks
+            comment: >-
+              Runs on every push and PR via gitleaks-action (SHA-pinned) in CI.
+              Locally runs as digest-pinned container via lefthook pre-commit hook.
+        comment: >-
+          Scans git history for leaked secrets. CI uses gitleaks-action; local
+          dev uses digest-pinned container (docker.io/zricethezav/gitleaks).
+
+      - name: oxlint
+        type: SAST
+        version: latest
+        rulesets:
+          - default
+        integration:
+          adhoc: true
+          ci: true
+          release: true
+        results:
+          ci:
+            name: oxlint CI results
+            location: https://github.com/mikkopiu/lambda-deadline-middleware/actions
+            predicate-uri: https://oxc.rs/docs/guide/usage/linter
+            comment: Static analysis runs in both CI and release workflows.
+        comment: >-
+          Fast Rust-based JavaScript/TypeScript linter providing static analysis
+          for code quality and potential security issues.
+
+      - name: Knip
+        type: SAST
+        version: latest
+        rulesets:
+          - default
+        integration:
+          adhoc: true
+          ci: true
+          release: true
+        results:
+          ci:
+            name: Knip unused exports scan
+            location: https://github.com/mikkopiu/lambda-deadline-middleware/actions
+            predicate-uri: https://knip.dev
+            comment: Detects unused files, exports, and dependencies.
+        comment: Detects unused files, dependencies, and exports to minimize attack surface.
+
+      - name: Sigstore (npm trusted publishing)
+        type: other
+        version: latest
+        rulesets:
+          - default
+        integration:
+          adhoc: false
+          ci: false
+          release: true
+        results:
+          release:
+            name: npm trusted publishing attestation
+            location: https://www.npmjs.com/package/lambda-deadline-middleware
+            predicate-uri: https://slsa.dev/provenance/v1
+            comment: >-
+              OIDC-based trusted publishing — no long-lived NPM_TOKEN required.
+              GitHub Actions OIDC token is exchanged directly with the npm
+              registry for a short-lived publish credential. Provenance and
+              sigstore signing happen automatically. Verify with
+              "npm audit signatures".
+        comment: >-
+          All release artifacts are published using npm trusted publishing via
+          GitHub Actions OIDC identity federation. No long-lived tokens or
+          signing keys are stored. Provenance attestations (SLSA L3) and
+          sigstore signatures are generated automatically during publish.
+
+      - name: Renovate
+        type: SCA
+        version: latest
+        rulesets:
+          - default
+        integration:
+          adhoc: false
+          ci: true
+          release: false
+        results:
+          ci:
+            name: Renovate dependency updates
+            location: https://github.com/mikkopiu/lambda-deadline-middleware/pulls
+            predicate-uri: https://docs.renovatebot.com
+            comment: Automated dependency update PRs with pinned versions.
+        comment: >-
+          Automated dependency update bot. Keeps dependencies current and
+          surfaces known vulnerabilities through timely updates.
+
+      - name: StepSecurity Harden Runner
+        type: other
+        version: latest
+        rulesets:
+          - default
+        integration:
+          adhoc: false
+          ci: true
+          release: false
+        results:
+          ci:
+            name: Harden Runner egress monitoring
+            location: https://github.com/mikkopiu/lambda-deadline-middleware/actions
+            predicate-uri: https://github.com/step-security/harden-runner
+            comment: >-
+              Monitors network egress, file integrity, and process activity on
+              CI runners. Detects supply-chain attacks in real time.
+        comment: >-
+          CI/CD runtime security agent providing network egress monitoring and
+          anomaly detection for GitHub Actions runners.

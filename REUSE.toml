@@ -1,0 +1,9 @@
+version = 1
+SPDX-PackageName = "lambda-deadline-middleware"
+SPDX-PackageSupplier = "https://github.com/mikkopiu/lambda-deadline-middleware/issues"
+
+[[annotations]]
+path = ["**/*"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 lambda-deadline-middleware contributors"
+SPDX-License-Identifier = "MIT"

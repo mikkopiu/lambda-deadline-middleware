@@ -1,0 +1,48 @@
+node_modules/
+dist/
+coverage/
+reports/
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+.aws/credentials
+*.keystore
+*.jks
+id_rsa
+id_ed25519
+*.secret
+
+# Editor
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.tsbuildinfo
+bench-results.json
+
+# SBOM (generated artifact)
+sbom.cdx.json
+
+# Security scanner output (generated, not committed)
+trivy-report.json
+trivy-results.sarif
+opengrep-results.json
+opengrep-results.sarif
+
+# Test report output (generated, not committed)
+test-results/
+
+# semantic-release tarball output
+release/

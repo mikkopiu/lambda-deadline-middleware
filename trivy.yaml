@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 lambda-deadline-middleware contributors
+# SPDX-License-Identifier: MIT
+
+scan:
+  scanners:
+    - vuln
+  include-dev-deps: true
+  skip-dirs:
+    - node_modules
+    - dist
+    - .git
+    - coverage
+    - reports
+
+severity:
+  - HIGH
+  - CRITICAL
+
+exit-code: 1
+format: table
+
+db:
+  repository: ghcr.io/aquasecurity/trivy-db:2

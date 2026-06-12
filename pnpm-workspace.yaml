@@ -1,0 +1,8 @@
+allowBuilds:
+  esbuild: true
+  lefthook: true
+
+minimumReleaseAgeExclude:
+  - qs@6.15.2
+
+minimumReleaseAgeStrict: true

@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 lambda-deadline-middleware contributors
+# SPDX-License-Identifier: MIT
+
+# Trivy vulnerability ignore file
+# Add CVE IDs here to suppress known-acceptable findings
+# Format: one CVE-ID per line, optionally followed by a comment
+# Example:
+# CVE-2024-12345 # accepted risk: only affects server-side usage, we're a library
