@@ -181,10 +181,7 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Run Opengrep (auto-installs with sigstore verification)
-        run: scripts/ensure-opengrep.sh scan --error .
-      - name: Generate SARIF report
-        if: always()
-        run: scripts/ensure-opengrep.sh scan --sarif --output opengrep-results.sarif . || true
+        run: scripts/ensure-opengrep.sh scan --error --sarif --output opengrep-results.sarif .
       - name: Upload SARIF to Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
@@ -210,21 +207,19 @@ jobs:
           scan-ref: .
           scanners: vuln
           severity: HIGH,CRITICAL
-          exit-code: "1"
+          format: json
+          output: trivy-results.json
         env:
           TRIVY_INCLUDE_DEV_DEPS: "true"
-      - name: Run Trivy (SARIF)
+      - name: Print results
         if: always()
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln
-          severity: HIGH,CRITICAL
-          format: sarif
-          output: trivy-results.sarif
-        env:
-          TRIVY_INCLUDE_DEV_DEPS: "true"
+        run: trivy convert --format table trivy-results.json
+      - name: Fail on findings
+        if: always()
+        run: trivy convert --format json trivy-results.json | jq -e '.Results | map(.Vulnerabilities // []) | flatten | length == 0'
+      - name: Convert to SARIF
+        if: always()
+        run: trivy convert --format sarif --output trivy-results.sarif trivy-results.json
       - name: Upload Trivy SARIF to Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
