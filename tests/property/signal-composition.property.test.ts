@@ -1,13 +1,30 @@
+import type { FinalizeHandlerArguments, FinalizeHandlerOutput } from "@smithy/types";
+
 import { test, fc } from "@fast-check/vitest";
 import { describe, expect, vi, beforeEach, afterEach } from "vitest";
-import { createDeadlineTimer, deadlineMiddlewareHandler } from "../../src/middleware.js";
-import { flushBufferMs } from "../../src/types.js";
-import type { DeadlineMiddlewareConfig, RequestDeadlineMs } from "../../src/types.js";
-import type {
-  FinalizeHandlerArguments,
-  FinalizeHandlerOutput,
-  HandlerExecutionContext,
-} from "@smithy/types";
+
+import { run } from "../../src/context-store.js";
+import { deadlineMiddleware } from "../../src/middleware.js";
+
+/**
+ * Helper to extract the middleware handler function from the Pluggable.
+ */
+function extractHandler(options?: { flushBufferMs?: number }) {
+  const pluggable = deadlineMiddleware(options);
+  let registeredFn: unknown;
+  const stack = {
+    add(fn: unknown) {
+      registeredFn = fn;
+    },
+  };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal mock
+  pluggable.applyToStack(stack as never);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- we know the shape from the implementation
+  return registeredFn as (
+    next: (args: FinalizeHandlerArguments<object>) => Promise<FinalizeHandlerOutput<object>>,
+    context: object,
+  ) => (args: FinalizeHandlerArguments<object>) => Promise<FinalizeHandlerOutput<object>>;
+}
 
 /**
  * Timer cleanup on completion
@@ -24,72 +41,61 @@ describe("Timer cleanup on completion", () => {
     vi.useRealTimers();
   });
 
-  const config: DeadlineMiddlewareConfig = {
-    flushBufferMs: flushBufferMs(1000),
-    telemetryEnabled: false,
-  };
-
   test.prop([fc.integer({ min: 1, max: 900_000 })], { numRuns: 100 })(
-    "after dispose, the timer does not fire and controller is not aborted",
-    (deadlineMs) => {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- branded type has no public constructor; only produced internally
-      const timer = createDeadlineTimer(deadlineMs as RequestDeadlineMs, config);
+    "after successful request, no lingering timers remain",
+    async (remaining) => {
+      const flushBufferMs = Math.max(0, Math.floor(remaining / 2));
+      const middleware = extractHandler({ flushBufferMs });
 
-      // Dispose the timer (simulates request completing before deadline)
-      timer[Symbol.dispose]();
+      const args: FinalizeHandlerArguments<object> = {
+        input: {},
+        request: { method: "POST", hostname: "localhost", path: "/" },
+      };
 
-      // Advance time well past the deadline
-      vi.advanceTimersByTime(deadlineMs + 1000);
+      /* oxlint-disable typescript/require-await -- async stub */
+      const next = async () => ({
+        response: { statusCode: 200 } as object,
+        output: {} as object,
+      });
+      /* oxlint-enable typescript/require-await */
 
-      // The controller should NOT be aborted since we disposed
-      expect(timer.controller.signal.aborted).toBe(false);
-    },
-  );
+      const handler = middleware(next, {});
 
-  test.prop([fc.integer({ min: 1, max: 900_000 })], { numRuns: 100 })(
-    "create timer, immediately dispose, advance past deadline — controller not aborted",
-    (deadlineMs) => {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- branded type has no public constructor; only produced internally
-      const timer = createDeadlineTimer(deadlineMs as RequestDeadlineMs, config);
+      // Only run when there's actually enough time for a deadline (remaining > flushBuffer)
+      fc.pre(remaining > flushBufferMs);
 
-      // Immediately dispose (simulates fast request completion)
-      timer[Symbol.dispose]();
+      await run({ getRemainingTimeInMillis: () => remaining }, async () => handler(args));
 
-      // Advance time far beyond the deadline
-      vi.advanceTimersByTime(deadlineMs * 2);
-
-      // Controller must remain unaborted
-      expect(timer.controller.signal.aborted).toBe(false);
-    },
-  );
-
-  test.prop([fc.integer({ min: 1, max: 900_000 })], { numRuns: 100 })(
-    "dispose clears all pending timers associated with the deadline",
-    (deadlineMs) => {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- branded type has no public constructor; only produced internally
-      const timer = createDeadlineTimer(deadlineMs as RequestDeadlineMs, config);
-
-      // Dispose should clear the timer
-      timer[Symbol.dispose]();
-
-      // Verify no pending timers remain by checking getTimerCount
       expect(vi.getTimerCount()).toBe(0);
     },
   );
 
   test.prop([fc.integer({ min: 1, max: 900_000 })], { numRuns: 100 })(
-    "multiple dispose calls are safe (idempotent cleanup)",
-    (deadlineMs) => {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- branded type has no public constructor; only produced internally
-      const timer = createDeadlineTimer(deadlineMs as RequestDeadlineMs, config);
+    "after next() throws, no lingering timers remain",
+    async (remaining) => {
+      const flushBufferMs = Math.max(0, Math.floor(remaining / 2));
+      const middleware = extractHandler({ flushBufferMs });
 
-      // Calling dispose multiple times should not throw
-      timer[Symbol.dispose]();
-      timer[Symbol.dispose]();
-      timer[Symbol.dispose]();
+      const args: FinalizeHandlerArguments<object> = {
+        input: {},
+        request: { method: "POST", hostname: "localhost", path: "/" },
+      };
 
-      vi.advanceTimersByTime(deadlineMs + 1000);
-      expect(timer.controller.signal.aborted).toBe(false);
+      /* oxlint-disable typescript/require-await -- async stub */
+      const next = async () => {
+        throw new Error("downstream error");
+      };
+      /* oxlint-enable typescript/require-await */
+
+      const handler = middleware(next, {});
+
+      fc.pre(remaining > flushBufferMs);
+
+      await run({ getRemainingTimeInMillis: () => remaining }, async () => handler(args)).catch(
+        () => {},
+      );
+
+      expect(vi.getTimerCount()).toBe(0);
     },
   );
 });
@@ -101,13 +107,6 @@ describe("Timer cleanup on completion", () => {
  * `next(args)` is identical to calling next without the middleware present.
  */
 describe("No-op outside Lambda context", () => {
-  const config: DeadlineMiddlewareConfig = {
-    flushBufferMs: flushBufferMs(1000),
-    telemetryEnabled: false,
-  };
-
-  const handlerContext: HandlerExecutionContext = {};
-
   test.prop(
     [
       fc.record({
@@ -127,6 +126,7 @@ describe("No-op outside Lambda context", () => {
   )(
     "middleware passes args through unmodified and returns next's result when no context is stored",
     async (args, nextResult) => {
+      const middleware = extractHandler();
       const receivedArgs: unknown[] = [];
       const expectedOutput: FinalizeHandlerOutput<object> = {
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fc.anything() produces unknown; casting to satisfy Smithy output shape
@@ -143,15 +143,12 @@ describe("No-op outside Lambda context", () => {
       };
       /* oxlint-enable typescript/require-await */
 
-      const handler = deadlineMiddlewareHandler(config)(next, handlerContext);
+      const handler = middleware(next, {});
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fc.record() output matches FinalizeHandlerArguments shape
       const result = await handler(args as FinalizeHandlerArguments<object>);
 
-      // Args passed to next should be the same reference (unmodified)
       expect(receivedArgs).toHaveLength(1);
       expect(receivedArgs[0]).toBe(args);
-
-      // Result should be what next returned (same reference)
       expect(result).toBe(expectedOutput);
     },
   );
@@ -172,10 +169,7 @@ describe("No-op outside Lambda context", () => {
   )(
     "middleware is a no-op regardless of flushBufferMs configuration when no context is stored",
     async (bufferValue, args) => {
-      const customConfig: DeadlineMiddlewareConfig = {
-        flushBufferMs: flushBufferMs(bufferValue),
-        telemetryEnabled: false,
-      };
+      const middleware = extractHandler({ flushBufferMs: bufferValue });
 
       const expectedOutput: FinalizeHandlerOutput<object> = {
         response: { status: 200 } as object,
@@ -195,7 +189,7 @@ describe("No-op outside Lambda context", () => {
       };
       /* oxlint-enable typescript/require-await */
 
-      const handler = deadlineMiddlewareHandler(customConfig)(next, handlerContext);
+      const handler = middleware(next, {});
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fc.record() output matches FinalizeHandlerArguments shape
       const result = await handler(args as FinalizeHandlerArguments<object>);
 

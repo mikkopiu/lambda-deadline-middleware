@@ -1,7 +1,8 @@
 import { test, fc } from "@fast-check/vitest";
 import { describe, expect } from "vitest";
+
 import { DeadlineExceededError, isDeadlineExceeded } from "../../src/error.js";
-import { flushBufferMs, milliseconds } from "../../src/types.js";
+import { milliseconds } from "../../src/types.js";
 
 /**
  * Type guard correctness
@@ -10,7 +11,7 @@ import { flushBufferMs, milliseconds } from "../../src/types.js";
  * isDeadlineExceeded returns false.
  */
 describe("Type guard correctness", () => {
-  // Arbitrary for DeadlineExceededError instances with random branded values
+  // Arbitrary for DeadlineExceededError instances with random values
   const deadlineExceededErrorArb = fc
     .record({
       deadlineMs: fc.integer({ min: 0, max: 900_000 }),
@@ -18,10 +19,10 @@ describe("Type guard correctness", () => {
       remainingMs: fc.integer({ min: 0, max: 900_000 }),
     })
     .map(
-      ({ deadlineMs, flushBufferMs: flushBuffer, remainingMs }) =>
+      ({ deadlineMs, flushBufferMs, remainingMs }) =>
         new DeadlineExceededError({
           deadlineMs: milliseconds(deadlineMs),
-          flushBufferMs: flushBufferMs(flushBuffer),
+          flushBufferMs: milliseconds(flushBufferMs),
           remainingMs: milliseconds(remainingMs),
         }),
     );

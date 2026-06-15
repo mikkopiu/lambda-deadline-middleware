@@ -1,166 +1,79 @@
+import type { FinalizeHandlerArguments, FinalizeHandlerOutput } from "@smithy/types";
+
 /* oxlint-disable typescript/require-await -- next() stubs are async without await to satisfy FinalizeHandler signature */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  computeDeadline,
-  composeSignals,
-  createDeadlineTimer,
-  deadlineMiddlewareHandler,
-} from "../../src/middleware.js";
+
 import { run } from "../../src/context-store.js";
 import { DeadlineExceededError } from "../../src/error.js";
-import { flushBufferMs } from "../../src/types.js";
-import type { DeadlineMiddlewareConfig, RequestDeadlineMs } from "../../src/types.js";
-import type {
-  FinalizeHandlerArguments,
-  FinalizeHandlerOutput,
-  HandlerExecutionContext,
-} from "@smithy/types";
+import { composeSignals, deadlineMiddleware } from "../../src/middleware.js";
 
-describe("computeDeadline", () => {
-  const config: DeadlineMiddlewareConfig = {
-    flushBufferMs: flushBufferMs(1000),
-    telemetryEnabled: false,
-  };
-
-  it("returns no-context when outside a run() scope", () => {
-    const result = computeDeadline(config);
-    expect(result).toEqual({ kind: "no-context" });
+describe("deadlineMiddleware config validation", () => {
+  it("throws TypeError for negative flushBufferMs", () => {
+    expect(() => deadlineMiddleware({ flushBufferMs: -1 })).toThrow(TypeError);
   });
 
-  it("returns deadline with correct value (remaining - flushBufferMs)", () => {
-    const result = run({ getRemainingTimeInMillis: () => 5000 }, () => computeDeadline(config));
-    expect(result).toEqual({ kind: "deadline", value: 4000 });
+  it("throws TypeError with descriptive message including the value", () => {
+    expect(() => deadlineMiddleware({ flushBufferMs: -5 })).toThrow(
+      "flushBufferMs option must be non-negative",
+    );
+    expect(() => deadlineMiddleware({ flushBufferMs: -5 })).toThrow("-5");
   });
 
-  it("returns insufficient-time when remaining equals buffer", () => {
-    const result = run({ getRemainingTimeInMillis: () => 1000 }, () => computeDeadline(config));
-    expect(result.kind).toBe("insufficient-time");
+  it("accepts zero for flushBufferMs", () => {
+    expect(() => deadlineMiddleware({ flushBufferMs: 0 })).not.toThrow();
   });
 
-  it("returns insufficient-time when remaining is less than buffer", () => {
-    const result = run({ getRemainingTimeInMillis: () => 500 }, () => computeDeadline(config));
-    expect(result.kind).toBe("insufficient-time");
-    if (result.kind === "insufficient-time") {
-      expect(result.remaining).toBe(500);
-      expect(result.buffer).toBe(1000);
-    }
-  });
-});
-
-describe("createDeadlineTimer", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
+  it("returns a Pluggable with applyToStack method", () => {
+    const pluggable = deadlineMiddleware();
+    expect(pluggable.applyToStack).toBeInstanceOf(Function);
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  it("registers middleware at finalizeRequest step with name 'deadlineMiddleware'", () => {
+    const pluggable = deadlineMiddleware();
+    const add = vi.fn();
+    const stack = { add };
 
-  const config: DeadlineMiddlewareConfig = {
-    flushBufferMs: flushBufferMs(1000),
-    telemetryEnabled: false,
-  };
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal mock satisfying complex Pluggable interface
+    pluggable.applyToStack(stack as never);
 
-  it("creates a timer that aborts after deadlineMs with DeadlineExceededError", () => {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- branded type has no public constructor; only produced internally
-    const timer = createDeadlineTimer(3500 as RequestDeadlineMs, config);
-
-    expect(timer.controller.signal.aborted).toBe(false);
-    vi.advanceTimersByTime(3500);
-    expect(timer.controller.signal.aborted).toBe(true);
-    expect(timer.controller.signal.reason).toBeInstanceOf(DeadlineExceededError);
-  });
-
-  it("abort error contains correct remainingMs = deadlineMs + flushBufferMs", () => {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- branded type has no public constructor; only produced internally
-    const timer = createDeadlineTimer(3500 as RequestDeadlineMs, config);
-    vi.advanceTimersByTime(3500);
-
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowing signal.reason after abort is triggered
-    const error = timer.controller.signal.reason as DeadlineExceededError;
-    // remainingMs should be deadlineMs + flushBufferMs = 3500 + 1000 = 4500
-    expect(error.remainingMs).toBe(4500);
-    expect(error.deadlineMs).toBe(3500);
-    expect(error.flushBufferMs).toBe(1000);
-  });
-
-  it("abort error remainingMs is deadlineMs + flushBufferMs, not deadlineMs - flushBufferMs", () => {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- branded type has no public constructor; only produced internally
-    const timer = createDeadlineTimer(2000 as RequestDeadlineMs, config);
-    vi.advanceTimersByTime(2000);
-
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowing signal.reason after abort is triggered
-    const error = timer.controller.signal.reason as DeadlineExceededError;
-    // Correct is deadlineMs + config.flushBufferMs = 2000 + 1000 = 3000
-    expect(error.remainingMs).toBe(3000);
-  });
-
-  it("[Symbol.dispose]() clears the timeout so it never fires", () => {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- branded type has no public constructor; only produced internally
-    const timer = createDeadlineTimer(100 as RequestDeadlineMs, config);
-    timer[Symbol.dispose]();
-    vi.advanceTimersByTime(200);
-    expect(timer.controller.signal.aborted).toBe(false);
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({
+        step: "finalizeRequest",
+        name: "deadlineMiddleware",
+        override: true,
+      }),
+    );
   });
 });
 
-describe("composeSignals", () => {
-  it("returns deadline signal when existing is undefined", () => {
-    const deadline = new AbortController().signal;
-    const result = composeSignals(undefined, deadline);
-    expect(result).toBe(deadline);
-  });
-
-  it("returns a composed signal (not the deadline alone) when existing is provided", () => {
-    const existingController = new AbortController();
-    const deadlineController = new AbortController();
-    const result = composeSignals(existingController.signal, deadlineController.signal);
-
-    // The composed signal should NOT be the same as the deadline signal alone
-    expect(result).not.toBe(deadlineController.signal);
-    // It should abort when the existing signal aborts
-    existingController.abort(new Error("existing abort"));
-    expect(result.aborted).toBe(true);
-  });
-
-  it("composed signal aborts when existing signal fires", () => {
-    const existingController = new AbortController();
-    const deadlineController = new AbortController();
-    const result = composeSignals(existingController.signal, deadlineController.signal);
-
-    existingController.abort(new Error("test"));
-    expect(result.aborted).toBe(true);
-  });
-
-  it("composed signal aborts when deadline signal fires", () => {
-    const existingController = new AbortController();
-    const deadlineController = new AbortController();
-    const result = composeSignals(existingController.signal, deadlineController.signal);
-
-    deadlineController.abort(new Error("deadline"));
-    expect(result.aborted).toBe(true);
-  });
-
-  it("returns AbortSignal.any() with both signals (not empty array)", () => {
-    const existingController = new AbortController();
-    const deadlineController = new AbortController();
-    const result = composeSignals(existingController.signal, deadlineController.signal);
-
-    // The composed signal should respond to both signals
-    expect(result.aborted).toBe(false);
-    deadlineController.abort(new Error("deadline"));
-    expect(result.aborted).toBe(true);
-  });
-});
-
-describe("deadlineMiddlewareHandler", () => {
-  const config: DeadlineMiddlewareConfig = {
-    flushBufferMs: flushBufferMs(1000),
-    telemetryEnabled: false,
+/**
+ * Helper to extract the middleware handler function from the Pluggable.
+ * Applies the pluggable to a mock stack and returns the registered handler.
+ */
+function extractHandler(options?: { flushBufferMs?: number }) {
+  const pluggable = deadlineMiddleware(options);
+  let registeredFn: unknown;
+  const stack = {
+    add(fn: unknown) {
+      registeredFn = fn;
+    },
   };
-  const handlerContext: HandlerExecutionContext = {};
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal mock
+  pluggable.applyToStack(stack as never);
+  // The registered fn is a FinalizeRequestMiddleware: (next, context) => handler
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- we know the shape from the implementation
+  const middleware = registeredFn as (
+    next: (args: FinalizeHandlerArguments<object>) => Promise<FinalizeHandlerOutput<object>>,
+    context: object,
+  ) => (args: FinalizeHandlerArguments<object>) => Promise<FinalizeHandlerOutput<object>>;
+  return middleware;
+}
 
+describe("deadline middleware handler", () => {
   it("passes args through unmodified in no-context mode", async () => {
+    const middleware = extractHandler();
     const args: FinalizeHandlerArguments<object> = {
       input: {},
       request: { method: "POST", hostname: "localhost", path: "/" },
@@ -177,14 +90,15 @@ describe("deadlineMiddlewareHandler", () => {
       return expectedOutput;
     };
 
-    const handler = deadlineMiddlewareHandler(config)(next, handlerContext);
+    const handler = middleware(next, {});
     const result = await handler(args);
 
     expect(receivedArgs).toBe(args);
     expect(result).toBe(expectedOutput);
   });
 
-  it("throws DeadlineExceededError in insufficient-time mode with correct properties", async () => {
+  it("throws DeadlineExceededError when remaining time <= flush buffer", async () => {
+    const middleware = extractHandler({ flushBufferMs: 1000 });
     const args: FinalizeHandlerArguments<object> = {
       input: {},
       request: { method: "POST", hostname: "localhost", path: "/" },
@@ -195,7 +109,7 @@ describe("deadlineMiddlewareHandler", () => {
       output: {} as object,
     });
 
-    const handler = deadlineMiddlewareHandler(config)(next, handlerContext);
+    const handler = middleware(next, {});
 
     const error = await run({ getRemainingTimeInMillis: () => 500 }, async () =>
       handler(args),
@@ -209,7 +123,8 @@ describe("deadlineMiddlewareHandler", () => {
     expect(dee.remainingMs).toBe(500);
   });
 
-  it("uses optional chaining safely when request has no signal", async () => {
+  it("attaches AbortSignal when request has no existing signal", async () => {
+    const middleware = extractHandler({ flushBufferMs: 1000 });
     const args: FinalizeHandlerArguments<object> = {
       input: {},
       request: { method: "POST", hostname: "localhost", path: "/" },
@@ -222,36 +137,16 @@ describe("deadlineMiddlewareHandler", () => {
       return { response: { statusCode: 200 } as object, output: {} as object };
     };
 
-    const handler = deadlineMiddlewareHandler(config)(next, handlerContext);
+    const handler = middleware(next, {});
 
     await run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args));
 
-    // Signal should be set (the deadline controller's signal)
     expect(capturedSignal).toBeDefined();
     expect(capturedSignal).toBeInstanceOf(AbortSignal);
   });
 
-  it("handles request being undefined without throwing", async () => {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- testing undefined request edge case
-    const args = {
-      input: {},
-      request: undefined,
-    } as unknown as FinalizeHandlerArguments<object>;
-
-    const next = async (_a: FinalizeHandlerArguments<object>) => ({
-      response: { statusCode: 200 } as object,
-      output: {} as object,
-    });
-
-    const handler = deadlineMiddlewareHandler(config)(next, handlerContext);
-
-    // Should not throw when request is undefined/null
-    await expect(
-      run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args)),
-    ).resolves.toBeDefined();
-  });
-
-  it("composes existing signal with deadline signal when request has a signal", async () => {
+  it("composes existing signal with deadline signal", async () => {
+    const middleware = extractHandler({ flushBufferMs: 1000 });
     const existingController = new AbortController();
     const args: FinalizeHandlerArguments<object> = {
       input: {},
@@ -270,16 +165,109 @@ describe("deadlineMiddlewareHandler", () => {
       return { response: { statusCode: 200 } as object, output: {} as object };
     };
 
-    const handler = deadlineMiddlewareHandler(config)(next, handlerContext);
+    const handler = middleware(next, {});
 
     await run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args));
 
-    // Signal should be a composed signal (not the original or just the deadline)
     expect(capturedSignal).toBeDefined();
     expect(capturedSignal).not.toBe(existingController.signal);
 
-    // Composed signal should abort when existing signal fires
     existingController.abort(new Error("existing abort"));
     expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it("handles request being undefined without throwing", async () => {
+    const middleware = extractHandler({ flushBufferMs: 1000 });
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- testing undefined request edge case
+    const args = {
+      input: {},
+      request: undefined,
+    } as unknown as FinalizeHandlerArguments<object>;
+
+    const next = async (_a: FinalizeHandlerArguments<object>) => ({
+      response: { statusCode: 200 } as object,
+      output: {} as object,
+    });
+
+    const handler = middleware(next, {});
+
+    await expect(
+      run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args)),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe("deadline timer cleanup", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("clears timeout after successful request (no lingering timers)", async () => {
+    const middleware = extractHandler({ flushBufferMs: 0 });
+    const args: FinalizeHandlerArguments<object> = {
+      input: {},
+      request: { method: "POST", hostname: "localhost", path: "/" },
+    };
+
+    const next = async () => ({
+      response: { statusCode: 200 } as object,
+      output: {} as object,
+    });
+
+    const handler = middleware(next, {});
+
+    await run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args));
+
+    // Timer should have been cleared
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clears timeout after next() throws (cleanup in error path)", async () => {
+    const middleware = extractHandler({ flushBufferMs: 0 });
+    const args: FinalizeHandlerArguments<object> = {
+      input: {},
+      request: { method: "POST", hostname: "localhost", path: "/" },
+    };
+
+    const next = async () => {
+      throw new Error("downstream error");
+    };
+
+    const handler = middleware(next, {});
+
+    await run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args)).catch(() => {});
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("composeSignals", () => {
+  it("returns deadline signal when existing is undefined", () => {
+    const deadline = new AbortController().signal;
+    const result = composeSignals(undefined, deadline);
+    expect(result).toBe(deadline);
+  });
+
+  it("returns a composed signal (not the deadline alone) when existing is provided", () => {
+    const existingController = new AbortController();
+    const deadlineController = new AbortController();
+    const result = composeSignals(existingController.signal, deadlineController.signal);
+
+    expect(result).not.toBe(deadlineController.signal);
+    existingController.abort(new Error("existing abort"));
+    expect(result.aborted).toBe(true);
+  });
+
+  it("composed signal aborts when deadline signal fires", () => {
+    const existingController = new AbortController();
+    const deadlineController = new AbortController();
+    const result = composeSignals(existingController.signal, deadlineController.signal);
+
+    deadlineController.abort(new Error("deadline"));
+    expect(result.aborted).toBe(true);
   });
 });

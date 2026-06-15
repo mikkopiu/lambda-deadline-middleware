@@ -1,3 +1,9 @@
+import type {
+  FinalizeHandler,
+  FinalizeHandlerArguments,
+  FinalizeHandlerOutput,
+} from "@smithy/types";
+
 /**
  * Performance benchmark for deadline middleware overhead.
  *
@@ -11,18 +17,28 @@
 import { bench, describe } from "vitest";
 
 import { run } from "../../src/context-store.js";
-import { parseConfig } from "../../src/config.js";
-import { deadlineMiddlewareHandler } from "../../src/middleware.js";
-import type { DeadlineMiddlewareConfig } from "../../src/types.js";
-import type {
-  FinalizeHandler,
-  FinalizeHandlerArguments,
-  FinalizeHandlerOutput,
-  HandlerExecutionContext,
-} from "@smithy/types";
+import { deadlineMiddleware } from "../../src/middleware.js";
+
+// Extract the middleware handler function from the Pluggable
+function extractHandler(options?: { flushBufferMs?: number }) {
+  const pluggable = deadlineMiddleware(options);
+  let registeredFn: unknown;
+  const stack = {
+    add(fn: unknown) {
+      registeredFn = fn;
+    },
+  };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal mock
+  pluggable.applyToStack(stack as never);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- we know the shape
+  return registeredFn as (
+    next: FinalizeHandler<object, object>,
+    context: object,
+  ) => FinalizeHandler<object, object>;
+}
 
 // Realistic config: 1000ms flush buffer
-const config: DeadlineMiddlewareConfig = parseConfig({ flushBufferMs: 1000 });
+const middleware = extractHandler({ flushBufferMs: 1000 });
 
 // Minimal next() mock — returns immediately to isolate middleware overhead
 /* oxlint-disable typescript/require-await -- stub satisfies FinalizeHandler interface */
@@ -34,9 +50,7 @@ const immediateNext: FinalizeHandler<object, object> = async (
 });
 /* oxlint-enable typescript/require-await */
 
-const handlerContext: HandlerExecutionContext = {
-  logger: { debug() {}, info() {}, warn() {}, error() {} },
-};
+const handlerContext = {};
 
 // Minimal request args
 const baseArgs: FinalizeHandlerArguments<object> = {
@@ -58,8 +72,7 @@ describe("Deadline Middleware Overhead", () => {
     async () => {
       // Simulate a Lambda with 5000ms remaining time
       await run({ getRemainingTimeInMillis: () => 5000 }, async () => {
-        const handler = deadlineMiddlewareHandler(config);
-        const dispatch = handler(immediateNext, handlerContext);
+        const dispatch = middleware(immediateNext, handlerContext);
         await dispatch(baseArgs);
       });
     },
@@ -70,8 +83,7 @@ describe("Deadline Middleware Overhead", () => {
     "middleware overhead - no context (no-op path)",
     async () => {
       // Outside Lambda context — middleware should pass through immediately
-      const handler = deadlineMiddlewareHandler(config);
-      const dispatch = handler(immediateNext, handlerContext);
+      const dispatch = middleware(immediateNext, handlerContext);
       await dispatch(baseArgs);
     },
     { iterations: 10_000, warmupIterations: 1_000 },
@@ -82,8 +94,7 @@ describe("Deadline Middleware Overhead", () => {
     async () => {
       // Lambda context present + caller has already set an AbortSignal
       await run({ getRemainingTimeInMillis: () => 5000 }, async () => {
-        const handler = deadlineMiddlewareHandler(config);
-        const dispatch = handler(immediateNext, handlerContext);
+        const dispatch = middleware(immediateNext, handlerContext);
         await dispatch(argsWithSignal);
       });
     },

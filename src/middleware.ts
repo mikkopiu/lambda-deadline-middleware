@@ -1,66 +1,19 @@
 // SPDX-FileCopyrightText: 2026 lambda-deadline-middleware contributors
 // SPDX-License-Identifier: MIT
 
-import { getRemainingTimeInMillis } from "./context-store.js";
-import { DeadlineExceededError } from "./error.js";
-import type { DeadlineComputation, DeadlineMiddlewareConfig, RequestDeadlineMs } from "./types.js";
-import { milliseconds } from "./types.js";
-
 import type {
   FinalizeHandler,
   FinalizeHandlerArguments,
   FinalizeHandlerOutput,
-  FinalizeRequestMiddleware,
   HandlerExecutionContext,
+  Pluggable,
 } from "@smithy/types";
 
-export const computeDeadline = (config: DeadlineMiddlewareConfig): DeadlineComputation => {
-  const remaining = getRemainingTimeInMillis();
+import { getRemainingTimeInMillis } from "./context-store.js";
+import { DeadlineExceededError } from "./error.js";
+import { milliseconds } from "./types.js";
 
-  if (remaining === undefined) {
-    return { kind: "no-context" };
-  }
-
-  const deadline = remaining - config.flushBufferMs;
-
-  if (deadline <= 0) {
-    return {
-      kind: "insufficient-time",
-      remaining: milliseconds(remaining),
-      buffer: config.flushBufferMs,
-    };
-  }
-
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- branded narrowing: deadline is validated > 0 above
-  return { kind: "deadline", value: deadline as RequestDeadlineMs };
-};
-
-export interface DeadlineTimer {
-  readonly controller: AbortController;
-  [Symbol.dispose]: () => void;
-}
-
-export const createDeadlineTimer = (
-  deadlineMs: RequestDeadlineMs,
-  config: DeadlineMiddlewareConfig,
-): DeadlineTimer => {
-  const controller = new AbortController();
-  const remaining = milliseconds(deadlineMs + config.flushBufferMs);
-  const error = new DeadlineExceededError({
-    deadlineMs: milliseconds(deadlineMs),
-    flushBufferMs: config.flushBufferMs,
-    remainingMs: remaining,
-  });
-  const timeoutId = setTimeout(() => {
-    controller.abort(error);
-  }, deadlineMs);
-  return {
-    controller,
-    [Symbol.dispose]() {
-      clearTimeout(timeoutId);
-    },
-  };
-};
+import type { DeadlineOptions } from "./types.js";
 
 export const composeSignals = (
   existing: AbortSignal | undefined,
@@ -70,42 +23,74 @@ export const composeSignals = (
   return AbortSignal.any([existing, deadline]);
 };
 
-export const deadlineMiddlewareHandler =
-  <Input extends object, Output extends object>(
-    config: DeadlineMiddlewareConfig,
-  ): FinalizeRequestMiddleware<Input, Output> =>
-  (
-    next: FinalizeHandler<Input, Output>,
-    _context: HandlerExecutionContext,
-  ): FinalizeHandler<Input, Output> =>
-  // oxlint-disable-next-line typescript/consistent-return -- switch is exhaustive over DeadlineComputation discriminated union
-  async (args: FinalizeHandlerArguments<Input>): Promise<FinalizeHandlerOutput<Output>> => {
-    const computation = computeDeadline(config);
+export const deadlineMiddleware = <Input extends object, Output extends object>(
+  options?: DeadlineOptions,
+): Pluggable<Input, Output> => {
+  const raw = options?.flushBufferMs ?? 1000;
+  if (raw < 0) {
+    throw new TypeError(`flushBufferMs option must be non-negative, received: ${raw}`);
+  }
+  const flushBufferMs = milliseconds(raw);
 
-    switch (computation.kind) {
-      case "no-context":
-        return next(args);
+  return {
+    applyToStack(stack) {
+      // Registered at "finalizeRequest" (attempt level) rather than API-call level so each retry gets a deadline
+      // computed from the actual remaining time at that moment. API-call level would cache a stale deadline
+      // across retries, which grow more dangerous after backoff delays eat into remaining time.
+      stack.add(
+        (
+          next: FinalizeHandler<Input, Output>,
+          _context: HandlerExecutionContext,
+        ): FinalizeHandler<Input, Output> =>
+          async (args: FinalizeHandlerArguments<Input>): Promise<FinalizeHandlerOutput<Output>> => {
+            const remaining = getRemainingTimeInMillis();
+            if (remaining === undefined) return next(args);
 
-      case "insufficient-time":
-        throw new DeadlineExceededError({
-          deadlineMs: milliseconds(0),
-          flushBufferMs: computation.buffer,
-          remainingMs: computation.remaining,
-        });
+            const deadline = remaining - flushBufferMs;
 
-      case "deadline": {
-        // `using` guarantees cleanup (clearTimeout) even if next() throws, the promise rejects,
-        // or an external abort signal fires — strictly more reliable than try/finally.
-        using timer = createDeadlineTimer(computation.value, config);
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Smithy request is an opaque object; we access optional signal property
-        const request = args.request as { signal?: AbortSignal } | undefined;
-        const signal = composeSignals(request?.signal, timer.controller.signal);
-        const result = await next({
-          ...args,
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- spreading opaque Smithy request to add signal
-          request: { ...(args.request as object), signal },
-        });
-        return result;
-      }
-    }
+            if (deadline <= 0) {
+              throw new DeadlineExceededError({
+                deadlineMs: milliseconds(0),
+                flushBufferMs,
+                remainingMs: milliseconds(remaining),
+              });
+            }
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+              controller.abort(
+                new DeadlineExceededError({
+                  deadlineMs: milliseconds(deadline),
+                  flushBufferMs,
+                  remainingMs: milliseconds(remaining),
+                }),
+              );
+            }, deadline);
+
+            // `using` guarantees cleanup (clearTimeout) even if next() throws, the promise rejects,
+            // or an external abort signal fires — strictly more reliable than try/finally.
+            using _timer = {
+              [Symbol.dispose]() {
+                clearTimeout(timeoutId);
+              },
+            };
+
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Smithy request is an opaque object; we access optional signal property
+            const request = args.request as { signal?: AbortSignal } | undefined;
+            const signal = composeSignals(request?.signal, controller.signal);
+            const result = await next({
+              ...args,
+              // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- spreading opaque Smithy request to add signal
+              request: { ...(args.request as object), signal },
+            });
+            return result;
+          },
+        {
+          step: "finalizeRequest",
+          name: "deadlineMiddleware",
+          override: true,
+        },
+      );
+    },
   };
+};

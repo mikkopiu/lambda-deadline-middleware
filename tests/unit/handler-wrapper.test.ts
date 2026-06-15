@@ -1,7 +1,9 @@
 /* oxlint-disable typescript/require-await -- handler stubs are async without await to satisfy Promise-returning handler interface */
 import { describe, expect, it } from "vitest";
-import { withLambdaDeadline } from "../../src/handler-wrapper.js";
+
 import { getRemainingTimeInMillis } from "../../src/context-store.js";
+import { withLambdaDeadline } from "../../src/handler-wrapper.js";
+
 import type { LambdaContextLike } from "../../src/context-store.js";
 
 describe("withLambdaDeadline", () => {
@@ -94,17 +96,6 @@ describe("withLambdaDeadline", () => {
     const context = {} as LambdaContextLike;
     await wrapped({}, context);
     expect(capturedTime).toBeUndefined();
-  });
-
-  it("accepts optional DeadlineOptions without error", async () => {
-    const handler = async () => "result";
-    const wrapped = withLambdaDeadline(handler, { flushBufferMs: 2000 });
-
-    const context: LambdaContextLike = {
-      getRemainingTimeInMillis: () => 5000,
-    };
-    const result = await wrapped({}, context);
-    expect(result).toBe("result");
   });
 
   it("always returns a Promise", () => {

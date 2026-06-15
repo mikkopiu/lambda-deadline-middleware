@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+
 import { run, getRemainingTimeInMillis } from "../../src/context-store.js";
 
 describe("context-store", () => {

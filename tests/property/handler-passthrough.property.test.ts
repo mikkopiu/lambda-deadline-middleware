@@ -1,5 +1,6 @@
 import { test, fc } from "@fast-check/vitest";
 import { describe, expect } from "vitest";
+
 import { withLambdaDeadline } from "../../src/handler-wrapper.js";
 
 /**

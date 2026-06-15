@@ -2,18 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { run } from "./context-store.js";
-import type { LambdaContextLike } from "./context-store.js";
-import type { DeadlineOptions } from "./types.js";
 
-type AsyncHandler<TEvent, TResult> = (
+import type { LambdaContextLike } from "./context-store.js";
+
+type AsyncHandler<TEvent, TContext extends LambdaContextLike, TResult> = (
   event: TEvent,
-  context: LambdaContextLike,
+  context: TContext,
 ) => Promise<TResult>;
 
 export const withLambdaDeadline =
-  <TEvent, TResult>(
-    handler: AsyncHandler<TEvent, TResult>,
-    _options?: DeadlineOptions,
-  ): AsyncHandler<TEvent, TResult> =>
-  async (event: TEvent, context: LambdaContextLike): Promise<TResult> =>
+  <TEvent, TContext extends LambdaContextLike, TResult>(
+    handler: AsyncHandler<TEvent, TContext, TResult>,
+  ): AsyncHandler<TEvent, TContext, TResult> =>
+  async (event: TEvent, context: TContext): Promise<TResult> =>
     run(context, async () => handler(event, context));

@@ -1,6 +1,8 @@
+import { setImmediate as nextTick } from "node:timers/promises";
+
 import { test, fc } from "@fast-check/vitest";
 import { describe, expect } from "vitest";
-import { setImmediate as nextTick } from "node:timers/promises";
+
 import { run, getRemainingTimeInMillis } from "../../src/context-store.js";
 
 /**
