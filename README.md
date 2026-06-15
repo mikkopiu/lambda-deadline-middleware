@@ -6,8 +6,8 @@
 Zero-dependency AWS SDK v3 middleware that automatically propagates Lambda execution deadlines to outgoing SDK calls via
 `AbortController`-based timeouts.
 
-When an AWS SDK call hangs inside a Lambda function, the runtime terminates the process at the configured timeout,
-destroying in-flight OpenTelemetry/X-Ray spans without export. This library prevents that by computing per-request
+When an AWS SDK call hangs inside a Lambda function, the runtime terminates the process at the configured timeout
+without throwing an error or giving your code a chance to react. This library prevents that by computing per-request
 deadlines from the Lambda's remaining execution time and aborting requests before the hard timeout fires.
 
 ## Features
@@ -17,7 +17,6 @@ deadlines from the Lambda's remaining execution time and aborting requests befor
 - Signal composition: preserves caller-provided `AbortSignal` via `AbortSignal.any()`
 - Zero runtime dependencies (`@smithy/types` is compile-time only)
 - Complete no-op when no Lambda context is available
-- Optional OpenTelemetry span events on deadline aborts (detected dynamically)
 - Branded types prevent millisecond/buffer interchange at compile time
 
 ## Requirements
@@ -90,7 +89,7 @@ flowchart LR
 
 ### Flush Buffer
 
-The flush buffer is subtracted from the remaining Lambda time to leave room for telemetry export and error handling:
+The flush buffer is subtracted from the remaining Lambda time to leave room for graceful shutdown and error handling:
 
 ```typescript
 // Default: 1000ms
@@ -98,14 +97,6 @@ dynamodb.middlewareStack.use(deadlineMiddleware());
 
 // Custom: 500ms
 dynamodb.middlewareStack.use(deadlineMiddleware({ flushBufferMs: 500 }));
-```
-
-### Telemetry
-
-If `@opentelemetry/api` is installed, span events are emitted on deadline aborts. Disable with:
-
-```typescript
-dynamodb.middlewareStack.use(deadlineMiddleware({ telemetryEnabled: false }));
 ```
 
 ## Error Handling
@@ -151,7 +142,7 @@ await dynamodb.send(
 
 ## API Reference
 
-### `withLambdaDeadline(handler, options?)`
+### `withLambdaDeadline(handler)`
 
 Wraps a Lambda handler to store the Lambda context in `AsyncLocalStorage`. Required for the middleware to access
 `getRemainingTimeInMillis()`.
@@ -159,7 +150,6 @@ Wraps a Lambda handler to store the Lambda context in `AsyncLocalStorage`. Requi
 ```typescript
 function withLambdaDeadline<TEvent, TResult>(
   handler: (event: TEvent, context: LambdaContextLike) => Promise<TResult>,
-  options?: DeadlineOptions,
 ): (event: TEvent, context: LambdaContextLike) => Promise<TResult>;
 ```
 
@@ -193,7 +183,7 @@ function isDeadlineExceeded(error: unknown): error is DeadlineExceededError;
 class DeadlineExceededError extends Error {
   readonly name: "DeadlineExceededError";
   readonly deadlineMs: Milliseconds;
-  readonly flushBufferMs: FlushBufferMs;
+  readonly flushBufferMs: Milliseconds;
   readonly remainingMs: Milliseconds;
 }
 ```
@@ -203,19 +193,15 @@ class DeadlineExceededError extends Error {
 ```typescript
 interface DeadlineOptions {
   readonly flushBufferMs?: number; // Default: 1000
-  readonly telemetryEnabled?: boolean; // Default: true
 }
 ```
 
 ### Types
 
-| Type                  | Description                                                                  |
-| --------------------- | ---------------------------------------------------------------------------- |
-| `Milliseconds`        | Branded number representing a duration in ms                                 |
-| `FlushBufferMs`       | Branded number for the flush buffer                                          |
-| `RequestDeadlineMs`   | Branded number for a computed deadline                                       |
-| `DeadlineComputation` | Discriminated union: `"deadline"` \| `"insufficient-time"` \| `"no-context"` |
-| `LambdaContextLike`   | Minimal interface: `{ getRemainingTimeInMillis?(): number }`                 |
+| Type                | Description                                                  |
+| ------------------- | ------------------------------------------------------------ |
+| `Milliseconds`      | Branded number representing a duration in ms                 |
+| `LambdaContextLike` | Minimal interface: `{ getRemainingTimeInMillis?(): number }` |
 
 ## Reporting Bugs
 

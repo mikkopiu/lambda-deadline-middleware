@@ -9,30 +9,16 @@ export interface LambdaContextLike {
   getRemainingTimeInMillis?: () => number;
 }
 
-// Sentinel allows AsyncLocalStorage.run() to accept null/undefined context
-// without throwing, while the accessor can distinguish "no context stored"
-// from "context present but missing the method".
-const NO_CONTEXT: unique symbol = Symbol("no-context");
-
-type StoreValue = LambdaContextLike | typeof NO_CONTEXT;
-
-const contextStorage = new AsyncLocalStorage<StoreValue>();
+const contextStorage = new AsyncLocalStorage<LambdaContextLike>();
 
 export const run = <T>(context: LambdaContextLike | null | undefined, fn: () => T): T => {
-  const value: StoreValue = context ?? NO_CONTEXT;
-  return contextStorage.run(value, fn);
+  if (context === null || context === undefined) return fn();
+  return contextStorage.run(context, fn);
 };
 
 export const getRemainingTimeInMillis = (): number | undefined => {
   const store = contextStorage.getStore();
-
-  if (store === undefined || store === NO_CONTEXT) {
-    return undefined;
-  }
-
-  if (typeof store.getRemainingTimeInMillis !== "function") {
-    return undefined;
-  }
-
+  if (store === undefined) return undefined;
+  if (typeof store.getRemainingTimeInMillis !== "function") return undefined;
   return store.getRemainingTimeInMillis();
 };

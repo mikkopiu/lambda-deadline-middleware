@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
+
 import { DeadlineExceededError, isDeadlineExceeded } from "../../src/error.js";
-import { flushBufferMs, milliseconds } from "../../src/types.js";
+import { milliseconds } from "../../src/types.js";
 
 describe("DeadlineExceededError", () => {
   it("has name set to 'DeadlineExceededError'", () => {
     const error = new DeadlineExceededError({
       deadlineMs: milliseconds(3500),
-      flushBufferMs: flushBufferMs(1000),
+      flushBufferMs: milliseconds(1000),
       remainingMs: milliseconds(4500),
     });
     expect(error.name).toBe("DeadlineExceededError");
@@ -15,7 +16,7 @@ describe("DeadlineExceededError", () => {
   it("extends Error", () => {
     const error = new DeadlineExceededError({
       deadlineMs: milliseconds(3500),
-      flushBufferMs: flushBufferMs(1000),
+      flushBufferMs: milliseconds(1000),
       remainingMs: milliseconds(4500),
     });
     expect(error).toBeInstanceOf(Error);
@@ -24,16 +25,16 @@ describe("DeadlineExceededError", () => {
   it("formats message with deadline and flush buffer values", () => {
     const error = new DeadlineExceededError({
       deadlineMs: milliseconds(3500),
-      flushBufferMs: flushBufferMs(1000),
+      flushBufferMs: milliseconds(1000),
       remainingMs: milliseconds(4500),
     });
     expect(error.message).toBe("Request deadline exceeded: 3500ms deadline (1000ms flush buffer)");
   });
 
-  it("stores branded properties", () => {
+  it("stores properties correctly", () => {
     const error = new DeadlineExceededError({
       deadlineMs: milliseconds(2000),
-      flushBufferMs: flushBufferMs(500),
+      flushBufferMs: milliseconds(500),
       remainingMs: milliseconds(2500),
     });
     expect(error.deadlineMs).toBe(2000);
@@ -44,7 +45,7 @@ describe("DeadlineExceededError", () => {
   it("has a stack trace", () => {
     const error = new DeadlineExceededError({
       deadlineMs: milliseconds(100),
-      flushBufferMs: flushBufferMs(50),
+      flushBufferMs: milliseconds(50),
       remainingMs: milliseconds(150),
     });
     expect(error.stack).toBeDefined();
@@ -55,7 +56,7 @@ describe("isDeadlineExceeded", () => {
   it("returns true for DeadlineExceededError instances", () => {
     const error = new DeadlineExceededError({
       deadlineMs: milliseconds(3500),
-      flushBufferMs: flushBufferMs(1000),
+      flushBufferMs: milliseconds(1000),
       remainingMs: milliseconds(4500),
     });
     expect(isDeadlineExceeded(error)).toBe(true);

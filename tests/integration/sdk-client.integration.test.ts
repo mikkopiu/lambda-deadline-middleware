@@ -1,3 +1,5 @@
+import type { HttpHandlerOptions, HttpRequest } from "@smithy/types";
+
 /**
  * Integration tests for the deadline middleware with real AWS SDK v3 clients.
  *
@@ -12,15 +14,16 @@
  */
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+
 import { DynamoDBClient, PutItemCommand, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import type { HttpHandlerOptions, HttpRequest } from "@smithy/types";
+import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { withLambdaDeadline } from "../../src/handler-wrapper.js";
-import { deadlineMiddleware } from "../../src/registration.js";
 import { DeadlineExceededError, isDeadlineExceeded } from "../../src/error.js";
+import { withLambdaDeadline } from "../../src/handler-wrapper.js";
+import { deadlineMiddleware } from "../../src/middleware.js";
+
 import type { LambdaContextLike } from "../../src/context-store.js";
 
 /** Creates a minimal fake HTTP handler that returns a 200 response */

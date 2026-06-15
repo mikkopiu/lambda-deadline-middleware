@@ -1,18 +1,18 @@
 // SPDX-FileCopyrightText: 2026 lambda-deadline-middleware contributors
 // SPDX-License-Identifier: MIT
 
-import type { FlushBufferMs, Milliseconds } from "./types.js";
+import type { Milliseconds } from "./types.js";
 
 interface DeadlineExceededInit {
   readonly deadlineMs: Milliseconds;
-  readonly flushBufferMs: FlushBufferMs;
+  readonly flushBufferMs: Milliseconds;
   readonly remainingMs: Milliseconds;
 }
 
 export class DeadlineExceededError extends Error {
   override readonly name = "DeadlineExceededError" as const;
   readonly deadlineMs: Milliseconds;
-  readonly flushBufferMs: FlushBufferMs;
+  readonly flushBufferMs: Milliseconds;
   readonly remainingMs: Milliseconds;
 
   constructor(init: DeadlineExceededInit) {

@@ -1,9 +1,36 @@
+import type { FinalizeHandlerArguments, FinalizeHandlerOutput } from "@smithy/types";
+
 import { test, fc } from "@fast-check/vitest";
 import { describe, expect } from "vitest";
+
 import { run } from "../../src/context-store.js";
-import { computeDeadline } from "../../src/middleware.js";
-import { flushBufferMs } from "../../src/types.js";
-import type { DeadlineMiddlewareConfig } from "../../src/types.js";
+import { DeadlineExceededError } from "../../src/error.js";
+import { deadlineMiddleware } from "../../src/middleware.js";
+
+/**
+ * Helper to extract the middleware handler function from the Pluggable.
+ */
+function extractHandler(options?: { flushBufferMs?: number }) {
+  const pluggable = deadlineMiddleware(options);
+  let registeredFn: unknown;
+  const stack = {
+    add(fn: unknown) {
+      registeredFn = fn;
+    },
+  };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal mock
+  pluggable.applyToStack(stack as never);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- we know the shape from the implementation
+  return registeredFn as (
+    next: (args: FinalizeHandlerArguments<object>) => Promise<FinalizeHandlerOutput<object>>,
+    context: object,
+  ) => (args: FinalizeHandlerArguments<object>) => Promise<FinalizeHandlerOutput<object>>;
+}
+
+const args: FinalizeHandlerArguments<object> = {
+  input: {},
+  request: { method: "POST", hostname: "localhost", path: "/" },
+};
 
 /**
  * Insufficient time produces immediate abort
@@ -13,64 +40,55 @@ import type { DeadlineMiddlewareConfig } from "../../src/types.js";
 describe("Insufficient time produces immediate abort", () => {
   test.prop([fc.integer({ min: 0, max: 900_000 }), fc.integer({ min: 0, max: 900_000 })], {
     numRuns: 100,
-  })("computeDeadline returns insufficient-time when remaining <= buffer", (remaining, buffer) => {
-    fc.pre(remaining <= buffer);
+  })(
+    "middleware throws DeadlineExceededError when remaining <= buffer",
+    async (remaining, buffer) => {
+      fc.pre(remaining <= buffer);
 
-    const config: DeadlineMiddlewareConfig = {
-      flushBufferMs: flushBufferMs(buffer),
-      telemetryEnabled: false,
-    };
+      const middleware = extractHandler({ flushBufferMs: buffer });
 
-    const result = run({ getRemainingTimeInMillis: () => remaining }, () =>
-      computeDeadline(config),
-    );
-
-    expect(result).toEqual({
-      kind: "insufficient-time",
-      remaining,
-      buffer,
-    });
-  });
-
-  test.prop([fc.integer({ min: 0, max: 900_000 })], { numRuns: 100 })(
-    "computeDeadline returns insufficient-time when remaining === buffer (exactly zero deadline)",
-    (value) => {
-      const config: DeadlineMiddlewareConfig = {
-        flushBufferMs: flushBufferMs(value),
-        telemetryEnabled: false,
+      let nextCalled = false;
+      /* oxlint-disable typescript/require-await -- async stub */
+      const next = async () => {
+        nextCalled = true;
+        return { response: {} as object, output: {} as object };
       };
+      /* oxlint-enable typescript/require-await */
 
-      const result = run({ getRemainingTimeInMillis: () => value }, () => computeDeadline(config));
+      const handler = middleware(next, {});
 
-      expect(result).toEqual({
-        kind: "insufficient-time",
-        remaining: value,
-        buffer: value,
-      });
+      const error = await run({ getRemainingTimeInMillis: () => remaining }, async () =>
+        handler(args),
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(DeadlineExceededError);
+      expect(nextCalled).toBe(false);
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowing after instanceof check above
+      const dee = error as DeadlineExceededError;
+      expect(dee.remainingMs).toBe(remaining);
+      expect(dee.flushBufferMs).toBe(buffer);
     },
   );
 
-  test.prop([fc.integer({ min: 0, max: 900_000 }), fc.integer({ min: 0, max: 900_000 })], {
-    numRuns: 100,
-  })(
-    "insufficient-time result contains correct remaining and buffer values",
-    (remaining, buffer) => {
-      fc.pre(remaining <= buffer);
+  test.prop([fc.integer({ min: 0, max: 900_000 })], { numRuns: 100 })(
+    "middleware throws DeadlineExceededError when remaining === buffer (exactly zero deadline)",
+    async (value) => {
+      const middleware = extractHandler({ flushBufferMs: value });
 
-      const config: DeadlineMiddlewareConfig = {
-        flushBufferMs: flushBufferMs(buffer),
-        telemetryEnabled: false,
-      };
+      /* oxlint-disable typescript/require-await -- async stub */
+      const next = async () => ({
+        response: {} as object,
+        output: {} as object,
+      });
+      /* oxlint-enable typescript/require-await */
 
-      const result = run({ getRemainingTimeInMillis: () => remaining }, () =>
-        computeDeadline(config),
-      );
+      const handler = middleware(next, {});
 
-      expect(result.kind).toBe("insufficient-time");
-      if (result.kind === "insufficient-time") {
-        expect(result.remaining).toBe(remaining);
-        expect(result.buffer).toBe(buffer);
-      }
+      const error = await run({ getRemainingTimeInMillis: () => value }, async () =>
+        handler(args),
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(DeadlineExceededError);
     },
   );
 });
