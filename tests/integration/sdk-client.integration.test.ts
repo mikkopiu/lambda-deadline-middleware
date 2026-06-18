@@ -20,8 +20,8 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { withLambdaDeadline, setDeadlineSignal } from "../../src/context-store.js";
 import { DeadlineExceededError, isDeadlineExceeded } from "../../src/error.js";
-import { withLambdaDeadline } from "../../src/handler-wrapper.js";
 import { deadlineMiddleware } from "../../src/middleware.js";
 
 import type { LambdaContextLike } from "../../src/context-store.js";
@@ -231,15 +231,17 @@ describe("SDK Client Integration", () => {
     it("throws DeadlineExceededError when remaining time is less than flush buffer", async () => {
       const handler = createFakeHandler();
       const dynamo = createDynamoClient(handler);
-      dynamo.middlewareStack.use(deadlineMiddleware({ flushBufferMs: 1000 }));
+      dynamo.middlewareStack.use(deadlineMiddleware());
 
-      const lambdaHandler = withLambdaDeadline(async () =>
-        dynamo.send(
-          new PutItemCommand({
-            TableName: "test-table",
-            Item: { pk: { S: "key-1" } },
-          }),
-        ),
+      const lambdaHandler = withLambdaDeadline(
+        async () =>
+          dynamo.send(
+            new PutItemCommand({
+              TableName: "test-table",
+              Item: { pk: { S: "key-1" } },
+            }),
+          ),
+        { flushBufferMs: 1000 },
       );
 
       // Remaining time (500ms) < flush buffer (1000ms) → immediate abort
@@ -255,15 +257,17 @@ describe("SDK Client Integration", () => {
     it("throws DeadlineExceededError when remaining time equals flush buffer", async () => {
       const handler = createFakeHandler();
       const dynamo = createDynamoClient(handler);
-      dynamo.middlewareStack.use(deadlineMiddleware({ flushBufferMs: 2000 }));
+      dynamo.middlewareStack.use(deadlineMiddleware());
 
-      const lambdaHandler = withLambdaDeadline(async () =>
-        dynamo.send(
-          new GetItemCommand({
-            TableName: "t",
-            Key: { pk: { S: "k" } },
-          }),
-        ),
+      const lambdaHandler = withLambdaDeadline(
+        async () =>
+          dynamo.send(
+            new GetItemCommand({
+              TableName: "t",
+              Key: { pk: { S: "k" } },
+            }),
+          ),
+        { flushBufferMs: 2000 },
       );
 
       // Remaining time (2000ms) == flush buffer (2000ms) → immediate abort
@@ -276,7 +280,6 @@ describe("SDK Client Integration", () => {
     });
 
     it("aborts via timeout when HTTP response takes longer than deadline", async () => {
-      // A handler that respects abort signals on the request object
       const abortAwareHandler = {
         handle: async (request: HttpRequest) => {
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- accessing signal from opaque Smithy HttpRequest
@@ -287,7 +290,7 @@ describe("SDK Client Integration", () => {
             if (signal) {
               if (signal.aborted) {
                 clearTimeout(timeout);
-                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- signal.reason is unknown; we know it's Error from our abort call
+                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- signal.reason is unknown
                 reject((signal.reason as Error | undefined) ?? new Error("aborted"));
                 return;
               }
@@ -295,7 +298,7 @@ describe("SDK Client Integration", () => {
                 "abort",
                 () => {
                   clearTimeout(timeout);
-                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- signal.reason is unknown; we know it's Error from our abort call
+                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- signal.reason is unknown
                   reject((signal.reason as Error | undefined) ?? new Error("aborted"));
                 },
                 { once: true },
@@ -321,18 +324,20 @@ describe("SDK Client Integration", () => {
         credentials: { accessKeyId: "fake", secretAccessKey: "fake" },
         maxAttempts: 1,
       });
-      dynamo.middlewareStack.use(deadlineMiddleware({ flushBufferMs: 0 }));
+      dynamo.middlewareStack.use(deadlineMiddleware());
 
-      const lambdaHandler = withLambdaDeadline(async () =>
-        dynamo.send(
-          new PutItemCommand({
-            TableName: "test-table",
-            Item: { pk: { S: "key-1" } },
-          }),
-        ),
+      // 50ms remaining, 0ms buffer → 50ms deadline. Handler takes 200ms → abort fires.
+      const lambdaHandler = withLambdaDeadline(
+        async () =>
+          dynamo.send(
+            new PutItemCommand({
+              TableName: "test-table",
+              Item: { pk: { S: "key-1" } },
+            }),
+          ),
+        { flushBufferMs: 0 },
       );
 
-      // 50ms deadline, handler takes 200ms → abort fires
       const context: LambdaContextLike = {
         getRemainingTimeInMillis: () => 50,
       };
@@ -404,20 +409,14 @@ describe("SDK Client Integration", () => {
 
   describe("Signal composition — caller-provided AbortSignal", () => {
     it("aborts when caller signal fires before deadline", async () => {
-      // The caller's abortSignal is passed via handlerOptions by the SDK,
-      // separate from our middleware's signal. This test verifies that
-      // the SDK propagates the caller abort independently.
       const abortAwareHandler = {
         handle: async (request: HttpRequest, handlerOptions?: HttpHandlerOptions) => {
-          // The SDK passes caller abort signal via handlerOptions.abortSignal
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- handlerOptions has no typed abortSignal property
           const callerSignal = (handlerOptions as { abortSignal?: AbortSignal } | undefined)
             ?.abortSignal;
-          // Our middleware puts its signal on request.signal
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- accessing signal from opaque Smithy HttpRequest
           const deadlineSignal = (request as unknown as { signal?: AbortSignal }).signal;
 
-          // Create a combined signal to listen to both
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- filter(Boolean) guarantees non-null elements
           const signals = [callerSignal, deadlineSignal].filter(Boolean) as AbortSignal[];
           const combined = signals.length > 0 ? AbortSignal.any(signals) : undefined;
@@ -427,7 +426,7 @@ describe("SDK Client Integration", () => {
             if (combined) {
               if (combined.aborted) {
                 clearTimeout(timeout);
-                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- signal.reason is unknown; we know it's Error from our abort call
+                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- signal.reason is unknown
                 reject((combined.reason as Error | undefined) ?? new Error("aborted"));
                 return;
               }
@@ -435,7 +434,7 @@ describe("SDK Client Integration", () => {
                 "abort",
                 () => {
                   clearTimeout(timeout);
-                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- signal.reason is unknown; we know it's Error from our abort call
+                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- signal.reason is unknown
                   reject((combined.reason as Error | undefined) ?? new Error("aborted"));
                 },
                 { once: true },
@@ -461,12 +460,11 @@ describe("SDK Client Integration", () => {
         credentials: { accessKeyId: "fake", secretAccessKey: "fake" },
         maxAttempts: 1,
       });
-      dynamo.middlewareStack.use(deadlineMiddleware({ flushBufferMs: 0 }));
+      dynamo.middlewareStack.use(deadlineMiddleware());
 
       const callerController = new AbortController();
 
       const lambdaHandler = withLambdaDeadline(async () => {
-        // Abort after 10ms via caller signal
         setTimeout(() => {
           callerController.abort(new Error("caller abort"));
         }, 10);
@@ -480,20 +478,20 @@ describe("SDK Client Integration", () => {
       });
 
       const context: LambdaContextLike = {
-        getRemainingTimeInMillis: () => 10000, // Long deadline — won't fire
+        getRemainingTimeInMillis: () => 10000,
       };
 
       const error = await lambdaHandler({}, context).catch((e: unknown) => e);
       expect(error).toBeDefined();
       expect(error).toBeInstanceOf(Error);
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowing after instanceof check above
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowing after instanceof check
       expect((error as Error).message).toBe("caller abort");
     });
 
     it("succeeds when neither caller signal nor deadline fires", async () => {
       const handler = createSqsFakeHandler();
       const sqs = createSqsClient(handler);
-      sqs.middlewareStack.use(deadlineMiddleware({ flushBufferMs: 0 }));
+      sqs.middlewareStack.use(deadlineMiddleware());
       const callerController = new AbortController();
 
       const lambdaHandler = withLambdaDeadline(async () => {
@@ -516,18 +514,15 @@ describe("SDK Client Integration", () => {
     });
   });
 
-  describe("Retry behavior — fresh deadline per attempt", () => {
-    it("computes fresh deadline for each retry attempt with decreasing remaining time", async () => {
+  describe("Retry behavior — single deadline covers all attempts", () => {
+    it("retries succeed under the same deadline signal", async () => {
       let callCount = 0;
-      let remainingTime = 5000;
 
       const handler = {
-        // oxlint-disable-next-line typescript/require-await -- async to satisfy HttpHandler interface without awaiting
+        // oxlint-disable-next-line typescript/require-await -- async to satisfy HttpHandler interface
         handle: async () => {
           callCount++;
           if (callCount === 1) {
-            // First attempt: simulate time passing, return retryable 503
-            remainingTime = 3000;
             return {
               response: {
                 statusCode: 503,
@@ -539,7 +534,6 @@ describe("SDK Client Integration", () => {
               },
             };
           }
-          // Second attempt: succeed
           return {
             response: {
               statusCode: 200,
@@ -561,7 +555,7 @@ describe("SDK Client Integration", () => {
         credentials: { accessKeyId: "fake", secretAccessKey: "fake" },
         maxAttempts: 3,
       });
-      dynamo.middlewareStack.use(deadlineMiddleware({ flushBufferMs: 500 }));
+      dynamo.middlewareStack.use(deadlineMiddleware());
 
       const lambdaHandler = withLambdaDeadline(async () => {
         await dynamo.send(
@@ -574,60 +568,12 @@ describe("SDK Client Integration", () => {
       });
 
       const context: LambdaContextLike = {
-        getRemainingTimeInMillis: () => remainingTime,
+        getRemainingTimeInMillis: () => 5000,
       };
 
       const result = await lambdaHandler({}, context);
       expect(result).toBe("ok");
       expect(callCount).toBe(2);
-    });
-
-    it("fails with DeadlineExceededError when retry has insufficient time", async () => {
-      let remainingTime = 3000;
-
-      const handler = {
-        // oxlint-disable-next-line typescript/require-await -- async to satisfy HttpHandler interface without awaiting
-        handle: async () => {
-          // Time drops below buffer after first call
-          remainingTime = 800;
-          return {
-            response: {
-              statusCode: 503,
-              headers: {
-                "content-type": "application/json",
-                "x-amzn-requestid": "fake-request-id",
-              },
-              body: undefined,
-            },
-          };
-        },
-        updateHttpClientConfig: () => {},
-        httpHandlerConfigs: () => ({}),
-      };
-
-      const dynamo = new DynamoDBClient({
-        region: "us-east-1",
-        requestHandler: handler,
-        credentials: { accessKeyId: "fake", secretAccessKey: "fake" },
-        maxAttempts: 3,
-      });
-      dynamo.middlewareStack.use(deadlineMiddleware({ flushBufferMs: 1000 }));
-
-      const lambdaHandler = withLambdaDeadline(async () =>
-        dynamo.send(
-          new PutItemCommand({
-            TableName: "test-table",
-            Item: { pk: { S: "key-1" } },
-          }),
-        ),
-      );
-
-      const context: LambdaContextLike = {
-        getRemainingTimeInMillis: () => remainingTime,
-      };
-
-      const error = await lambdaHandler({}, context).catch((e: unknown) => e);
-      expect(isDeadlineExceeded(error)).toBe(true);
     });
   });
 
@@ -635,17 +581,20 @@ describe("SDK Client Integration", () => {
     it("wraps handler, registers middleware, makes successful call end-to-end", async () => {
       const handler = createFakeHandler();
       const dynamo = createDynamoClient(handler);
-      dynamo.middlewareStack.use(deadlineMiddleware({ flushBufferMs: 500 }));
+      dynamo.middlewareStack.use(deadlineMiddleware());
 
-      const lambdaHandler = withLambdaDeadline(async (event: { key: string }) => {
-        await dynamo.send(
-          new PutItemCommand({
-            TableName: "test-table",
-            Item: { pk: { S: event.key }, data: { S: "value" } },
-          }),
-        );
-        return "done";
-      });
+      const lambdaHandler = withLambdaDeadline(
+        async (event: { key: string }) => {
+          await dynamo.send(
+            new PutItemCommand({
+              TableName: "test-table",
+              Item: { pk: { S: event.key }, data: { S: "value" } },
+            }),
+          );
+          return "done";
+        },
+        { flushBufferMs: 500 },
+      );
 
       const context: LambdaContextLike = {
         getRemainingTimeInMillis: () => 15000,
@@ -655,7 +604,7 @@ describe("SDK Client Integration", () => {
       expect(result).toBe("done");
     });
 
-    it("multiple SDK clients in same handler share context", async () => {
+    it("multiple SDK clients in same handler share deadline signal", async () => {
       let sqsCallCount = 0;
       let dynamoCallCount = 0;
 
@@ -676,6 +625,189 @@ describe("SDK Client Integration", () => {
       dynamo.middlewareStack.use(deadlineMiddleware());
 
       const lambdaHandler = withLambdaDeadline(async () => {
+        await dynamo.send(
+          new PutItemCommand({
+            TableName: "test-table",
+            Item: { pk: { S: "key" } },
+          }),
+        );
+
+        const sqsResult = await sqs.send(
+          new SendMessageCommand({
+            QueueUrl: "https://sqs.us-east-1.amazonaws.com/123/queue",
+            MessageBody: "processed",
+          }),
+        );
+
+        return sqsResult.MessageId;
+      });
+
+      const context: LambdaContextLike = {
+        getRemainingTimeInMillis: () => 10000,
+      };
+
+      const result = await lambdaHandler({}, context);
+      expect(result).toBe("fake-msg-id");
+      expect(dynamoCallCount).toBe(1);
+      expect(sqsCallCount).toBe(1);
+    });
+  });
+
+  describe("External signal (setDeadlineSignal) — SDK calls use provided signal", () => {
+    it("DynamoDB call succeeds using external signal instead of auto-computed", async () => {
+      const handler = createFakeHandler();
+      const dynamo = createDynamoClient(handler);
+      dynamo.middlewareStack.use(deadlineMiddleware());
+
+      const controller = new AbortController();
+
+      const lambdaHandler = withLambdaDeadline(async () => {
+        setDeadlineSignal(controller.signal);
+        await dynamo.send(
+          new PutItemCommand({
+            TableName: "test-table",
+            Item: { pk: { S: "key-1" } },
+          }),
+        );
+        return "ok";
+      });
+
+      const context: LambdaContextLike = {
+        getRemainingTimeInMillis: () => 10000,
+      };
+
+      const result = await lambdaHandler({}, context);
+      expect(result).toBe("ok");
+    });
+
+    it("external signal abort cancels in-flight SDK request", async () => {
+      const abortAwareHandler = {
+        handle: async (request: HttpRequest) => {
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- accessing signal from opaque Smithy HttpRequest
+          const signal = (request as unknown as { signal?: AbortSignal }).signal;
+
+          await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(resolve, 500);
+            if (signal) {
+              if (signal.aborted) {
+                clearTimeout(timeout);
+                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- signal.reason is unknown
+                reject((signal.reason as Error | undefined) ?? new Error("aborted"));
+                return;
+              }
+              signal.addEventListener(
+                "abort",
+                () => {
+                  clearTimeout(timeout);
+                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- signal.reason is unknown
+                  reject((signal.reason as Error | undefined) ?? new Error("aborted"));
+                },
+                { once: true },
+              );
+            }
+          });
+
+          return {
+            response: {
+              statusCode: 200,
+              headers: { "content-type": "application/json", "x-amzn-requestid": "x" },
+              body: undefined,
+            },
+          };
+        },
+        updateHttpClientConfig: () => {},
+        httpHandlerConfigs: () => ({}),
+      };
+
+      const dynamo = new DynamoDBClient({
+        region: "us-east-1",
+        requestHandler: abortAwareHandler,
+        credentials: { accessKeyId: "fake", secretAccessKey: "fake" },
+        maxAttempts: 1,
+      });
+      dynamo.middlewareStack.use(deadlineMiddleware());
+
+      const controller = new AbortController();
+
+      const lambdaHandler = withLambdaDeadline(async () => {
+        setDeadlineSignal(controller.signal);
+        setTimeout(() => {
+          controller.abort(new Error("deadline from Middy"));
+        }, 20);
+        return dynamo.send(
+          new PutItemCommand({
+            TableName: "test-table",
+            Item: { pk: { S: "key-1" } },
+          }),
+        );
+      });
+
+      const context: LambdaContextLike = {
+        getRemainingTimeInMillis: () => 10000,
+      };
+
+      const error = await lambdaHandler({}, context).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(Error);
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowing after instanceof check
+      expect((error as Error).message).toBe("deadline from Middy");
+    });
+
+    it("external signal set before auto-computation skips DeadlineExceededError", async () => {
+      // setDeadlineSignal overwrites the auto-computed signal.
+      // Even with remaining < flushBuffer, the handler runs because the auto-signal
+      // is created before the handler, but setDeadlineSignal replaces it.
+      // However, withLambdaDeadline throws BEFORE the handler if remaining <= buffer.
+      // So the correct test: remaining > buffer, but user sets their own signal.
+      const handler = createFakeHandler();
+      const dynamo = createDynamoClient(handler);
+      dynamo.middlewareStack.use(deadlineMiddleware());
+
+      const controller = new AbortController();
+
+      const lambdaHandler = withLambdaDeadline(async () => {
+        setDeadlineSignal(controller.signal);
+        await dynamo.send(
+          new PutItemCommand({
+            TableName: "test-table",
+            Item: { pk: { S: "key-1" } },
+          }),
+        );
+        return "ok";
+      });
+
+      const context: LambdaContextLike = {
+        getRemainingTimeInMillis: () => 5000,
+      };
+
+      const result = await lambdaHandler({}, context);
+      expect(result).toBe("ok");
+    });
+
+    it("multiple SDK clients share external signal in same invocation", async () => {
+      let sqsCallCount = 0;
+      let dynamoCallCount = 0;
+
+      const sqsHandler = createSqsFakeHandler({
+        onRequest: () => {
+          sqsCallCount++;
+        },
+      });
+      const dynamoHandler = createFakeHandler({
+        onRequest: () => {
+          dynamoCallCount++;
+        },
+      });
+
+      const sqs = createSqsClient(sqsHandler);
+      sqs.middlewareStack.use(deadlineMiddleware());
+      const dynamo = createDynamoClient(dynamoHandler);
+      dynamo.middlewareStack.use(deadlineMiddleware());
+
+      const controller = new AbortController();
+
+      const lambdaHandler = withLambdaDeadline(async () => {
+        setDeadlineSignal(controller.signal);
+
         await dynamo.send(
           new PutItemCommand({
             TableName: "test-table",

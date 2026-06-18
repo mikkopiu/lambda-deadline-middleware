@@ -3,82 +3,92 @@ import { setImmediate as nextTick } from "node:timers/promises";
 import { test, fc } from "@fast-check/vitest";
 import { describe, expect } from "vitest";
 
-import { run, getRemainingTimeInMillis } from "../../src/context-store.js";
+import {
+  getDeadlineSignal,
+  setDeadlineSignal,
+  withLambdaDeadline,
+} from "../../src/context-store.js";
+
+import type { LambdaContextLike } from "../../src/context-store.js";
 
 /**
  * Context store isolation
- * For any two concurrent Lambda invocations with different getRemainingTimeInMillis() values,
- * reading the remaining time from within each invocation's async chain always returns
- * that invocation's own value, never the other's.
+ * For any two concurrent Lambda invocations with different external signals,
+ * reading the deadline signal from within each invocation's async chain always returns
+ * that invocation's own signal, never the other's.
  */
 describe("Context store isolation", () => {
-  test.prop([fc.integer({ min: 1, max: 900_000 }), fc.integer({ min: 1, max: 900_000 })], {
+  test.prop([fc.integer({ min: 1001, max: 900_000 }), fc.integer({ min: 1001, max: 900_000 })], {
     numRuns: 100,
   })(
-    "concurrent invocations with different remaining times read their own value",
+    "concurrent invocations with different signals read their own signal",
     async (timeA, timeB) => {
       fc.pre(timeA !== timeB);
 
-      const contextA = { getRemainingTimeInMillis: () => timeA };
-      const contextB = { getRemainingTimeInMillis: () => timeB };
+      const signalA = new AbortController().signal;
+      const signalB = new AbortController().signal;
+      const contextA: LambdaContextLike = { getRemainingTimeInMillis: () => timeA };
+      const contextB: LambdaContextLike = { getRemainingTimeInMillis: () => timeB };
 
       const [resultA, resultB] = await Promise.all([
-        run(contextA, async () => {
-          // Yield to event loop to allow interleaving
+        withLambdaDeadline(async () => {
+          setDeadlineSignal(signalA);
           await nextTick();
-          return getRemainingTimeInMillis();
-        }),
-        run(contextB, async () => {
-          // Yield to event loop to allow interleaving
+          return getDeadlineSignal();
+        })({}, contextA),
+        withLambdaDeadline(async () => {
+          setDeadlineSignal(signalB);
           await nextTick();
-          return getRemainingTimeInMillis();
-        }),
+          return getDeadlineSignal();
+        })({}, contextB),
       ]);
 
-      expect(resultA).toBe(timeA);
-      expect(resultB).toBe(timeB);
+      expect(resultA).toBe(signalA);
+      expect(resultB).toBe(signalB);
     },
   );
 
-  test.prop([fc.integer({ min: 1, max: 900_000 }), fc.integer({ min: 1, max: 900_000 })], {
+  test.prop([fc.integer({ min: 1001, max: 900_000 }), fc.integer({ min: 1001, max: 900_000 })], {
     numRuns: 100,
   })(
     "concurrent invocations with multiple async awaits maintain isolation",
     async (timeA, timeB) => {
       fc.pre(timeA !== timeB);
 
-      const contextA = { getRemainingTimeInMillis: () => timeA };
-      const contextB = { getRemainingTimeInMillis: () => timeB };
+      const signalA = new AbortController().signal;
+      const signalB = new AbortController().signal;
+      const contextA: LambdaContextLike = { getRemainingTimeInMillis: () => timeA };
+      const contextB: LambdaContextLike = { getRemainingTimeInMillis: () => timeB };
 
       const [resultsA, resultsB] = await Promise.all([
-        run(contextA, async () => {
-          const readings: (number | undefined)[] = [];
-          readings.push(getRemainingTimeInMillis());
+        withLambdaDeadline(async () => {
+          setDeadlineSignal(signalA);
+          const readings: (AbortSignal | undefined)[] = [];
+          readings.push(getDeadlineSignal());
           await nextTick();
-          readings.push(getRemainingTimeInMillis());
+          readings.push(getDeadlineSignal());
           await nextTick();
-          readings.push(getRemainingTimeInMillis());
+          readings.push(getDeadlineSignal());
           return readings;
-        }),
-        run(contextB, async () => {
-          const readings: (number | undefined)[] = [];
-          readings.push(getRemainingTimeInMillis());
+        })({}, contextA),
+        withLambdaDeadline(async () => {
+          setDeadlineSignal(signalB);
+          const readings: (AbortSignal | undefined)[] = [];
+          readings.push(getDeadlineSignal());
           await nextTick();
-          readings.push(getRemainingTimeInMillis());
+          readings.push(getDeadlineSignal());
           await nextTick();
-          readings.push(getRemainingTimeInMillis());
+          readings.push(getDeadlineSignal());
           return readings;
-        }),
+        })({}, contextB),
       ]);
 
-      // Every reading in context A should be timeA
       for (const reading of resultsA) {
-        expect(reading).toBe(timeA);
+        expect(reading).toBe(signalA);
       }
 
-      // Every reading in context B should be timeB
       for (const reading of resultsB) {
-        expect(reading).toBe(timeB);
+        expect(reading).toBe(signalB);
       }
     },
   );

@@ -2,7 +2,6 @@ import { test, fc } from "@fast-check/vitest";
 import { describe, expect } from "vitest";
 
 import { DeadlineExceededError, isDeadlineExceeded } from "../../src/error.js";
-import { milliseconds } from "../../src/types.js";
 
 /**
  * Type guard correctness
@@ -21,9 +20,9 @@ describe("Type guard correctness", () => {
     .map(
       ({ deadlineMs, flushBufferMs, remainingMs }) =>
         new DeadlineExceededError({
-          deadlineMs: milliseconds(deadlineMs),
-          flushBufferMs: milliseconds(flushBufferMs),
-          remainingMs: milliseconds(remainingMs),
+          deadlineMs,
+          flushBufferMs,
+          remainingMs,
         }),
     );
 

@@ -3,21 +3,65 @@
 
 # lambda-deadline-middleware
 
-Zero-dependency AWS SDK v3 middleware that automatically propagates Lambda execution deadlines to outgoing SDK calls via
-`AbortController`-based timeouts.
+[![npm version](https://img.shields.io/npm/v/lambda-deadline-middleware)](https://www.npmjs.com/package/lambda-deadline-middleware)
+[![CI](https://github.com/mikkopiu/lambda-deadline-middleware/actions/workflows/ci.yml/badge.svg)](https://github.com/mikkopiu/lambda-deadline-middleware/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-When an AWS SDK call hangs inside a Lambda function, the runtime terminates the process at the configured timeout
-without throwing an error or giving your code a chance to react. This library prevents that by computing per-request
-deadlines from the Lambda's remaining execution time and aborting requests before the hard timeout fires.
+Zero-dependency AWS SDK v3 middleware that propagates Lambda deadlines to outgoing SDK calls via `AbortSignal`.
+
+When an AWS SDK call hangs inside a Lambda, the runtime kills the process without throwing an error or giving your code
+a chance to react. This library attaches an `AbortSignal` to every outgoing SDK request so your calls fail fast instead
+of getting killed silently. The signal comes either from an external source you provide or is computed once from the
+Lambda's remaining execution time.
+
+```typescript
+import { withLambdaDeadline, deadlineMiddleware } from "lambda-deadline-middleware";
+import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
+
+const dynamodb = new DynamoDBClient({});
+dynamodb.middlewareStack.use(deadlineMiddleware());
+
+export const handler = withLambdaDeadline(async (event, context) => {
+  return dynamodb.send(new GetItemCommand({ TableName: "my-table", Key: { id: { S: event.id } } }));
+});
+```
 
 ## Features
 
-- Automatic deadline propagation, no manual timeout configuration per call
-- Fresh deadline per retry: each SDK retry attempt uses _current_ remaining time
-- Signal composition: preserves caller-provided `AbortSignal` via `AbortSignal.any()`
-- Zero runtime dependencies (`@smithy/types` is compile-time only)
-- Complete no-op when no Lambda context is available
-- Branded types prevent millisecond/buffer interchange at compile time
+- Zero runtime dependencies
+- Bring your own `AbortSignal` (from Middy, a manual `AbortController`, or any framework), or let the library compute
+  one from `getRemainingTimeInMillis()` at invocation start
+- One signal per invocation: covers all SDK calls and retries within the handler
+- Works alongside per-request `abortSignal` options you pass to `.send()`
+- Complete no-op outside Lambda (safe in local dev and tests)
+
+## How It Works
+
+```mermaid
+flowchart LR
+    subgraph Handler startup
+        A[Lambda Runtime] --> B[withLambdaDeadline]
+        B -->|compute signal once| C[AbortSignal.timeout]
+        B --> D[Your Handler]
+    end
+
+    subgraph Per outgoing SDK request
+        E[SDK .send] --> F[Deadline Middleware]
+        F -->|signal exists?| G[Compose with request signal]
+        F -->|no signal| H[Pass through]
+        G --> I[HTTP Request]
+        H --> I
+    end
+
+    D --> E
+
+    style F fill:#f9a825,stroke:#f57f17
+    style B fill:#66bb6a,stroke:#2e7d32
+```
+
+`withLambdaDeadline` computes `AbortSignal.timeout(remaining - flushBuffer)` once at invocation start and stores it in
+`AsyncLocalStorage`. The middleware reads it on each outgoing request and composes it with any per-request signal. If
+`setDeadlineSignal()` was called, that signal is used instead.
 
 ## Requirements
 
@@ -27,18 +71,17 @@ deadlines from the Lambda's remaining execution time and aborting requests befor
 ## Installation
 
 ```bash
-pnpm add lambda-deadline-middleware
+npm install lambda-deadline-middleware
 ```
 
 ## Usage
 
-Setup requires two pieces:
+Setup has two parts:
 
-1. **Wrap your handler** with `withLambdaDeadline`. This stores the Lambda `context` (specifically
-   `getRemainingTimeInMillis()`) in `AsyncLocalStorage` so the SDK middleware can read it. The SDK middleware stack has
-   no access to the Lambda context on its own.
+1. **Wrap your handler** with `withLambdaDeadline`. Computes the deadline signal once and stores it in
+   `AsyncLocalStorage`.
 
-2. **Register the middleware** on each SDK client via the standard `middlewareStack.use()` pattern.
+2. **Register the middleware** on each SDK client.
 
 ```typescript
 import { withLambdaDeadline, deadlineMiddleware } from "lambda-deadline-middleware";
@@ -57,66 +100,114 @@ export const handler = withLambdaDeadline(async (event, context) => {
 });
 ```
 
-Every SDK call through `dynamodb` now receives a timeout derived from the Lambda's remaining execution time minus a
-configurable flush buffer (default: 1000ms).
+Every SDK call through `dynamodb` gets an `AbortSignal` that fires at `remainingTime - flushBuffer` ms from handler
+start.
 
-## How It Works
+## External Signal (Middy, manual AbortController, etc.)
 
-```mermaid
-flowchart LR
-    subgraph Lambda Invocation
-        direction LR
-        A[Lambda Runtime] --> B[withLambdaDeadline]
-        B --> C[Your Handler]
-        C --> D[SDK .send]
-    end
+If you already have an `AbortSignal` (from Middy's `timeoutEarlyInMillis`, a manual controller, or anything else), pass
+it in directly:
 
-    subgraph Per Attempt
-        direction LR
-        D --> E[Deadline Middleware]
-        E -->|getRemainingTimeInMillis\nminus flush buffer| F[AbortController\n+ setTimeout]
-        F --> G[HTTP Request]
-    end
+```typescript
+import {
+  withLambdaDeadline,
+  deadlineMiddleware,
+  setDeadlineSignal,
+} from "lambda-deadline-middleware";
+import middy from "@middy/core";
+import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 
-    style E fill:#f9a825,stroke:#f57f17
-    style B fill:#66bb6a,stroke:#2e7d32
+const dynamodb = new DynamoDBClient({});
+dynamodb.middlewareStack.use(deadlineMiddleware());
+
+// Middy passes { signal } as the third argument when timeoutEarlyInMillis is set
+const baseHandler = async (event, context, { signal }) => {
+  setDeadlineSignal(signal);
+  const result = await dynamodb.send(
+    new GetItemCommand({
+      /* ... */
+    }),
+  );
+  return { statusCode: 200, body: JSON.stringify(result) };
+};
+
+export const handler = withLambdaDeadline(
+  middy({ timeoutEarlyInMillis: 1000 }).handler(baseHandler),
+);
 ```
 
-`withLambdaDeadline` stores the Lambda context in `AsyncLocalStorage`. The deadline middleware reads it on every attempt
-(including retries), computes a fresh timeout, and attaches an `AbortSignal` to the outgoing HTTP request.
+When an external signal is set via `setDeadlineSignal()`:
+
+- It **replaces** the auto-computed signal for the current invocation
+- The signal is composed with any per-request `AbortSignal` via `AbortSignal.any()`
+- You control when and why the abort fires
+
+When no external signal is set, the auto-computed signal (from `withLambdaDeadline`) is used.
+
+**Important:** `withLambdaDeadline` must wrap the outside. It creates the `AsyncLocalStorage` scope that
+`setDeadlineSignal` writes into.
+
+```typescript
+// ✅ Correct: withLambdaDeadline on the outside
+export const handler = withLambdaDeadline(
+  middy({ timeoutEarlyInMillis: 1000 }).handler(baseHandler),
+);
+
+// ❌ Wrong: store doesn't exist yet when baseHandler runs
+export const handler = middy({ timeoutEarlyInMillis: 1000 }).handler(
+  withLambdaDeadline(baseHandler),
+);
+```
+
+`setDeadlineSignal` only affects AWS SDK calls (via the Smithy middleware stack). For other async work, pass the signal
+yourself:
+
+```typescript
+const baseHandler = async (event, context, { signal }) => {
+  setDeadlineSignal(signal);
+
+  // SDK calls: aborted via middleware
+  const item = await dynamodb.send(
+    new GetItemCommand({
+      /* ... */
+    }),
+  );
+
+  // Non-SDK calls: pass signal manually
+  const response = await fetch("https://api.example.com/data", { signal });
+};
+```
 
 ## Configuration
 
 ### Flush Buffer
 
-The flush buffer is subtracted from the remaining Lambda time to leave room for graceful shutdown and error handling:
+Subtracted from remaining Lambda time to leave room for cleanup:
 
 ```typescript
-// Default: 1000ms
-dynamodb.middlewareStack.use(deadlineMiddleware());
+// Default: 1000ms flush buffer
+export const handler = withLambdaDeadline(myHandler);
 
-// Custom: 500ms
-dynamodb.middlewareStack.use(deadlineMiddleware({ flushBufferMs: 500 }));
+// Custom: 500ms flush buffer
+export const handler = withLambdaDeadline(myHandler, { flushBufferMs: 500 });
 ```
+
+Only applies to automatic signal computation. With `setDeadlineSignal()`, you control timing yourself.
 
 ## Error Handling
 
-When remaining time is less than or equal to the flush buffer, the middleware throws `DeadlineExceededError` immediately
-without dispatching an HTTP request.
+When remaining time ≤ flush buffer, `withLambdaDeadline` throws `DeadlineExceededError` without calling the handler:
 
 ```typescript
 import { isDeadlineExceeded } from "lambda-deadline-middleware";
 
 try {
-  await dynamodb.send(
-    new GetItemCommand({
-      /* ... */
-    }),
-  );
+  await handler(event, context);
 } catch (error) {
   if (isDeadlineExceeded(error)) {
-    console.log(`Deadline exceeded: ${error.deadlineMs}ms`);
-    console.log(`Remaining time was: ${error.remainingMs}ms`);
+    console.log(
+      `Deadline exceeded: remaining ${error.remainingMs}ms, buffer ${error.flushBufferMs}ms`,
+    );
   }
   throw error;
 }
@@ -124,11 +215,11 @@ try {
 
 ## Signal Composition
 
-If you pass an `AbortSignal` to a request, the middleware composes both signals:
+If you pass an `AbortSignal` to a specific SDK request, the middleware composes both. Whichever fires first wins:
 
 ```typescript
 const controller = new AbortController();
-setTimeout(() => controller.abort(), 5000);
+setTimeout(() => controller.abort(), 2000);
 
 await dynamodb.send(
   new GetItemCommand({
@@ -142,36 +233,36 @@ await dynamodb.send(
 
 ## API Reference
 
-### `withLambdaDeadline(handler)`
+### `withLambdaDeadline(handler, options?)`
 
-Wraps a Lambda handler to store the Lambda context in `AsyncLocalStorage`. Required for the middleware to access
-`getRemainingTimeInMillis()`.
+Wraps a Lambda handler. Computes `AbortSignal.timeout(remaining - flushBuffer)` and stores it in `AsyncLocalStorage`.
 
 ```typescript
 function withLambdaDeadline<TEvent, TResult>(
   handler: (event: TEvent, context: LambdaContextLike) => Promise<TResult>,
+  options?: DeadlineOptions,
 ): (event: TEvent, context: LambdaContextLike) => Promise<TResult>;
 ```
 
-### `deadlineMiddleware(options?)`
+### `deadlineMiddleware()`
 
-Returns a `Pluggable` for `client.middlewareStack.use()`.
+Returns a `Pluggable` for `client.middlewareStack.use()`. Attaches the stored deadline signal to outgoing requests.
 
 ```typescript
-function deadlineMiddleware(options?: DeadlineOptions): Pluggable<object, object>;
+function deadlineMiddleware(): Pluggable<object, object>;
 ```
 
-### `getRemainingTimeInMillis()`
+### `setDeadlineSignal(signal)`
 
-Accessor for the current Lambda's remaining execution time. Returns `undefined` outside a Lambda context.
+Replaces the deadline signal for the current invocation. Must be called within a `withLambdaDeadline()` scope.
 
 ```typescript
-function getRemainingTimeInMillis(): number | undefined;
+function setDeadlineSignal(signal: AbortSignal): void;
 ```
 
 ### `isDeadlineExceeded(error)`
 
-Type guard for deadline-triggered abort errors.
+Type guard for deadline-triggered errors.
 
 ```typescript
 function isDeadlineExceeded(error: unknown): error is DeadlineExceededError;
@@ -179,12 +270,14 @@ function isDeadlineExceeded(error: unknown): error is DeadlineExceededError;
 
 ### `DeadlineExceededError`
 
+Thrown by `withLambdaDeadline` when `remainingTime ≤ flushBufferMs`.
+
 ```typescript
 class DeadlineExceededError extends Error {
   readonly name: "DeadlineExceededError";
-  readonly deadlineMs: Milliseconds;
-  readonly flushBufferMs: Milliseconds;
-  readonly remainingMs: Milliseconds;
+  readonly deadlineMs: number;
+  readonly flushBufferMs: number;
+  readonly remainingMs: number;
 }
 ```
 
@@ -198,20 +291,19 @@ interface DeadlineOptions {
 
 ### Types
 
-| Type                | Description                                                  |
-| ------------------- | ------------------------------------------------------------ |
-| `Milliseconds`      | Branded number representing a duration in ms                 |
-| `LambdaContextLike` | Minimal interface: `{ getRemainingTimeInMillis?(): number }` |
+| Type                | Description                                                      |
+| ------------------- | ---------------------------------------------------------------- |
+| `LambdaContextLike` | Minimal interface: `{ getRemainingTimeInMillis?: () => number }` |
 
 ## Reporting Bugs
 
-Found a bug? Please open a [GitHub Issue](https://github.com/mikkopiu/lambda-deadline-middleware/issues/new) with:
+Found a bug? Please open a [GitHub Issue](https://github.com/mikkopiu/lambda-deadline-middleware/issues/new) with a
+minimal reproduction, your Node.js version, and AWS SDK version. For security vulnerabilities, see
+[SECURITY.md](SECURITY.md).
 
-- Your Node.js version and AWS SDK version
-- A minimal code snippet reproducing the problem
-- Expected vs actual behavior
+## Changelog
 
-For security vulnerabilities, see [SECURITY.md](SECURITY.md) instead.
+See [GitHub Releases](https://github.com/mikkopiu/lambda-deadline-middleware/releases).
 
 ## License
 

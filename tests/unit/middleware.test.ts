@@ -1,28 +1,32 @@
 import type { FinalizeHandlerArguments, FinalizeHandlerOutput } from "@smithy/types";
 
 /* oxlint-disable typescript/require-await -- next() stubs are async without await to satisfy FinalizeHandler signature */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
-import { run } from "../../src/context-store.js";
-import { DeadlineExceededError } from "../../src/error.js";
-import { composeSignals, deadlineMiddleware } from "../../src/middleware.js";
+import { setDeadlineSignal, withLambdaDeadline } from "../../src/context-store.js";
+import { deadlineMiddleware } from "../../src/middleware.js";
 
-describe("deadlineMiddleware config validation", () => {
-  it("throws TypeError for negative flushBufferMs", () => {
-    expect(() => deadlineMiddleware({ flushBufferMs: -1 })).toThrow(TypeError);
-  });
+/**
+ * Helper to extract the middleware handler function from the Pluggable.
+ */
+function extractHandler() {
+  const pluggable = deadlineMiddleware();
+  let registeredFn: unknown;
+  const stack = {
+    add(fn: unknown) {
+      registeredFn = fn;
+    },
+  };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal mock
+  pluggable.applyToStack(stack as never);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- we know the shape from the implementation
+  return registeredFn as (
+    next: (args: FinalizeHandlerArguments<object>) => Promise<FinalizeHandlerOutput<object>>,
+    context: object,
+  ) => (args: FinalizeHandlerArguments<object>) => Promise<FinalizeHandlerOutput<object>>;
+}
 
-  it("throws TypeError with descriptive message including the value", () => {
-    expect(() => deadlineMiddleware({ flushBufferMs: -5 })).toThrow(
-      "flushBufferMs option must be non-negative",
-    );
-    expect(() => deadlineMiddleware({ flushBufferMs: -5 })).toThrow("-5");
-  });
-
-  it("accepts zero for flushBufferMs", () => {
-    expect(() => deadlineMiddleware({ flushBufferMs: 0 })).not.toThrow();
-  });
-
+describe("deadlineMiddleware registration", () => {
   it("returns a Pluggable with applyToStack method", () => {
     const pluggable = deadlineMiddleware();
     expect(pluggable.applyToStack).toBeInstanceOf(Function);
@@ -33,7 +37,7 @@ describe("deadlineMiddleware config validation", () => {
     const add = vi.fn();
     const stack = { add };
 
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal mock satisfying complex Pluggable interface
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal mock
     pluggable.applyToStack(stack as never);
 
     expect(add).toHaveBeenCalledTimes(1);
@@ -48,38 +52,14 @@ describe("deadlineMiddleware config validation", () => {
   });
 });
 
-/**
- * Helper to extract the middleware handler function from the Pluggable.
- * Applies the pluggable to a mock stack and returns the registered handler.
- */
-function extractHandler(options?: { flushBufferMs?: number }) {
-  const pluggable = deadlineMiddleware(options);
-  let registeredFn: unknown;
-  const stack = {
-    add(fn: unknown) {
-      registeredFn = fn;
-    },
-  };
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal mock
-  pluggable.applyToStack(stack as never);
-  // The registered fn is a FinalizeRequestMiddleware: (next, context) => handler
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- we know the shape from the implementation
-  const middleware = registeredFn as (
-    next: (args: FinalizeHandlerArguments<object>) => Promise<FinalizeHandlerOutput<object>>,
-    context: object,
-  ) => (args: FinalizeHandlerArguments<object>) => Promise<FinalizeHandlerOutput<object>>;
-  return middleware;
-}
-
 describe("deadline middleware handler", () => {
-  it("passes args through unmodified in no-context mode", async () => {
+  it("passes args through unmodified when no deadline signal is set", async () => {
     const middleware = extractHandler();
     const args: FinalizeHandlerArguments<object> = {
       input: {},
       request: { method: "POST", hostname: "localhost", path: "/" },
     };
     const expectedOutput: FinalizeHandlerOutput<object> = {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Smithy output requires opaque object type
       response: { statusCode: 200 } as object,
       output: {} as object,
     };
@@ -97,34 +77,8 @@ describe("deadline middleware handler", () => {
     expect(result).toBe(expectedOutput);
   });
 
-  it("throws DeadlineExceededError when remaining time <= flush buffer", async () => {
-    const middleware = extractHandler({ flushBufferMs: 1000 });
-    const args: FinalizeHandlerArguments<object> = {
-      input: {},
-      request: { method: "POST", hostname: "localhost", path: "/" },
-    };
-
-    const next = async () => ({
-      response: {} as object,
-      output: {} as object,
-    });
-
-    const handler = middleware(next, {});
-
-    const error = await run({ getRemainingTimeInMillis: () => 500 }, async () =>
-      handler(args),
-    ).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(DeadlineExceededError);
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowing after instanceof check above
-    const dee = error as DeadlineExceededError;
-    expect(dee.deadlineMs).toBe(0);
-    expect(dee.flushBufferMs).toBe(1000);
-    expect(dee.remainingMs).toBe(500);
-  });
-
-  it("attaches AbortSignal when request has no existing signal", async () => {
-    const middleware = extractHandler({ flushBufferMs: 1000 });
+  it("attaches the auto-computed deadline signal to requests", async () => {
+    const middleware = extractHandler();
     const args: FinalizeHandlerArguments<object> = {
       input: {},
       request: { method: "POST", hostname: "localhost", path: "/" },
@@ -139,14 +93,18 @@ describe("deadline middleware handler", () => {
 
     const handler = middleware(next, {});
 
-    await run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args));
+    const lambdaHandler = withLambdaDeadline(async () => {
+      await handler(args);
+    });
+
+    await lambdaHandler({}, { getRemainingTimeInMillis: () => 5000 });
 
     expect(capturedSignal).toBeDefined();
     expect(capturedSignal).toBeInstanceOf(AbortSignal);
   });
 
-  it("composes existing signal with deadline signal", async () => {
-    const middleware = extractHandler({ flushBufferMs: 1000 });
+  it("composes existing request signal with deadline signal", async () => {
+    const middleware = extractHandler();
     const existingController = new AbortController();
     const args: FinalizeHandlerArguments<object> = {
       input: {},
@@ -167,7 +125,11 @@ describe("deadline middleware handler", () => {
 
     const handler = middleware(next, {});
 
-    await run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args));
+    const lambdaHandler = withLambdaDeadline(async () => {
+      await handler(args);
+    });
+
+    await lambdaHandler({}, { getRemainingTimeInMillis: () => 5000 });
 
     expect(capturedSignal).toBeDefined();
     expect(capturedSignal).not.toBe(existingController.signal);
@@ -176,42 +138,70 @@ describe("deadline middleware handler", () => {
     expect(capturedSignal?.aborted).toBe(true);
   });
 
+  it("uses external signal when set via setDeadlineSignal", async () => {
+    const middleware = extractHandler();
+    const controller = new AbortController();
+    const args: FinalizeHandlerArguments<object> = {
+      input: {},
+      request: { method: "POST", hostname: "localhost", path: "/" },
+    };
+
+    let capturedSignal: AbortSignal | undefined;
+    const next = async (a: FinalizeHandlerArguments<object>) => {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- accessing signal from opaque Smithy request
+      capturedSignal = (a.request as { signal?: AbortSignal }).signal;
+      return { response: { statusCode: 200 } as object, output: {} as object };
+    };
+
+    const middlewareHandler = middleware(next, {});
+
+    const lambdaHandler = withLambdaDeadline(async () => {
+      setDeadlineSignal(controller.signal);
+      await middlewareHandler(args);
+    });
+
+    await lambdaHandler({}, { getRemainingTimeInMillis: () => 5000 });
+
+    expect(capturedSignal).toBe(controller.signal);
+  });
+
+  it("external signal takes priority over auto-computed deadline", async () => {
+    const middleware = extractHandler();
+    const controller = new AbortController();
+    const args: FinalizeHandlerArguments<object> = {
+      input: {},
+      request: { method: "POST", hostname: "localhost", path: "/" },
+    };
+
+    // Remaining time (500ms) < default flushBuffer (1000ms) would throw
+    // But we set an external signal before the middleware runs, so
+    // withLambdaDeadline computes the signal first and throws. We need enough time.
+    const next = async () => ({
+      response: { statusCode: 200 } as object,
+      output: {} as object,
+    });
+
+    const middlewareHandler = middleware(next, {});
+
+    const lambdaHandler = withLambdaDeadline(async () => {
+      setDeadlineSignal(controller.signal);
+      await middlewareHandler(args);
+    });
+
+    // flushBuffer default is 1000, remaining 5000 — so auto-signal is created,
+    // but setDeadlineSignal overwrites it with our controller's signal.
+    await expect(
+      lambdaHandler({}, { getRemainingTimeInMillis: () => 5000 }),
+    ).resolves.toBeUndefined();
+  });
+
   it("handles request being undefined without throwing", async () => {
-    const middleware = extractHandler({ flushBufferMs: 1000 });
+    const middleware = extractHandler();
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- testing undefined request edge case
     const args = {
       input: {},
       request: undefined,
     } as unknown as FinalizeHandlerArguments<object>;
-
-    const next = async (_a: FinalizeHandlerArguments<object>) => ({
-      response: { statusCode: 200 } as object,
-      output: {} as object,
-    });
-
-    const handler = middleware(next, {});
-
-    await expect(
-      run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args)),
-    ).resolves.toBeDefined();
-  });
-});
-
-describe("deadline timer cleanup", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("clears timeout after successful request (no lingering timers)", async () => {
-    const middleware = extractHandler({ flushBufferMs: 0 });
-    const args: FinalizeHandlerArguments<object> = {
-      input: {},
-      request: { method: "POST", hostname: "localhost", path: "/" },
-    };
 
     const next = async () => ({
       response: { statusCode: 200 } as object,
@@ -220,54 +210,41 @@ describe("deadline timer cleanup", () => {
 
     const handler = middleware(next, {});
 
-    await run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args));
+    const lambdaHandler = withLambdaDeadline(async () => {
+      await handler(args);
+    });
 
-    // Timer should have been cleared
-    expect(vi.getTimerCount()).toBe(0);
+    await expect(
+      lambdaHandler({}, { getRemainingTimeInMillis: () => 5000 }),
+    ).resolves.toBeUndefined();
   });
 
-  it("clears timeout after next() throws (cleanup in error path)", async () => {
-    const middleware = extractHandler({ flushBufferMs: 0 });
+  it("propagates already-aborted external signal", async () => {
+    const middleware = extractHandler();
+    const controller = new AbortController();
+    controller.abort(new Error("pre-aborted"));
+
     const args: FinalizeHandlerArguments<object> = {
       input: {},
       request: { method: "POST", hostname: "localhost", path: "/" },
     };
 
-    const next = async () => {
-      throw new Error("downstream error");
+    let capturedSignal: AbortSignal | undefined;
+    const next = async (a: FinalizeHandlerArguments<object>) => {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- accessing signal from opaque Smithy request
+      capturedSignal = (a.request as { signal?: AbortSignal }).signal;
+      return { response: { statusCode: 200 } as object, output: {} as object };
     };
 
-    const handler = middleware(next, {});
+    const middlewareHandler = middleware(next, {});
 
-    await run({ getRemainingTimeInMillis: () => 5000 }, async () => handler(args)).catch(() => {});
+    const lambdaHandler = withLambdaDeadline(async () => {
+      setDeadlineSignal(controller.signal);
+      await middlewareHandler(args);
+    });
 
-    expect(vi.getTimerCount()).toBe(0);
-  });
-});
+    await lambdaHandler({}, { getRemainingTimeInMillis: () => 5000 });
 
-describe("composeSignals", () => {
-  it("returns deadline signal when existing is undefined", () => {
-    const deadline = new AbortController().signal;
-    const result = composeSignals(undefined, deadline);
-    expect(result).toBe(deadline);
-  });
-
-  it("returns a composed signal (not the deadline alone) when existing is provided", () => {
-    const existingController = new AbortController();
-    const deadlineController = new AbortController();
-    const result = composeSignals(existingController.signal, deadlineController.signal);
-
-    expect(result).not.toBe(deadlineController.signal);
-    existingController.abort(new Error("existing abort"));
-    expect(result.aborted).toBe(true);
-  });
-
-  it("composed signal aborts when deadline signal fires", () => {
-    const existingController = new AbortController();
-    const deadlineController = new AbortController();
-    const result = composeSignals(existingController.signal, deadlineController.signal);
-
-    deadlineController.abort(new Error("deadline"));
-    expect(result.aborted).toBe(true);
+    expect(capturedSignal?.aborted).toBe(true);
   });
 });
