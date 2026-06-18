@@ -1,7 +1,7 @@
 {
   "name": "lambda-deadline-middleware",
   "version": "0.0.0",
-  "description": "AWS SDK v3 middleware for automatic Lambda deadline propagation via AbortController-based timeouts",
+  "description": "Zero-dependency AWS SDK v3 middleware that propagates Lambda deadlines to outgoing SDK calls via AbortSignal",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -16,12 +16,12 @@ import type {
  */
 import { bench, describe } from "vitest";
 
-import { run } from "../../src/context-store.js";
+import { withLambdaDeadline } from "../../src/context-store.js";
 import { deadlineMiddleware } from "../../src/middleware.js";
 
 // Extract the middleware handler function from the Pluggable
-function extractHandler(options?: { flushBufferMs?: number }) {
-  const pluggable = deadlineMiddleware(options);
+function extractHandler() {
+  const pluggable = deadlineMiddleware();
   let registeredFn: unknown;
   const stack = {
     add(fn: unknown) {
@@ -37,8 +37,7 @@ function extractHandler(options?: { flushBufferMs?: number }) {
   ) => FinalizeHandler<object, object>;
 }
 
-// Realistic config: 1000ms flush buffer
-const middleware = extractHandler({ flushBufferMs: 1000 });
+const middleware = extractHandler();
 
 // Minimal next() mock — returns immediately to isolate middleware overhead
 /* oxlint-disable typescript/require-await -- stub satisfies FinalizeHandler interface */
@@ -70,11 +69,10 @@ describe("Deadline Middleware Overhead", () => {
   bench(
     "middleware overhead - with Lambda context (hot path)",
     async () => {
-      // Simulate a Lambda with 5000ms remaining time
-      await run({ getRemainingTimeInMillis: () => 5000 }, async () => {
+      await withLambdaDeadline(async () => {
         const dispatch = middleware(immediateNext, handlerContext);
         await dispatch(baseArgs);
-      });
+      })({}, { getRemainingTimeInMillis: () => 5000 });
     },
     { iterations: 10_000, warmupIterations: 1_000 },
   );
@@ -92,11 +90,10 @@ describe("Deadline Middleware Overhead", () => {
   bench(
     "middleware overhead - signal composition (with existing signal)",
     async () => {
-      // Lambda context present + caller has already set an AbortSignal
-      await run({ getRemainingTimeInMillis: () => 5000 }, async () => {
+      await withLambdaDeadline(async () => {
         const dispatch = middleware(immediateNext, handlerContext);
         await dispatch(argsWithSignal);
-      });
+      })({}, { getRemainingTimeInMillis: () => 5000 });
     },
     { iterations: 10_000, warmupIterations: 1_000 },
   );

@@ -7,9 +7,9 @@ Contributions are welcome. This document covers the development workflow, toolin
 
 ## Prerequisites
 
-- **Node.js 24+** — install via [fnm](https://github.com/Schniz/fnm): `fnm use` (reads `.node-version`)
-- **pnpm** — install via `corepack enable` (ships with Node.js)
-- **Git** — with hooks support (lefthook manages pre-commit)
+- **Node.js 24+**: install via [fnm](https://github.com/Schniz/fnm): `fnm use` (reads `.node-version`)
+- **pnpm**: install via `corepack enable` (ships with Node.js)
+- **Git**: with hooks support (lefthook manages pre-commit)
 
 ## Setup
 
@@ -128,8 +128,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for design decisions and conventions.
 Key points:
 
 - Pure functions over classes
-- Branded types for domain-specific values
-- Discriminated unions for multi-outcome results
 - `readonly` everywhere
 - "Why" comments only
 
@@ -193,7 +191,7 @@ Tests live in `tests/` organized by type: `unit/`, `property/`, `integration/`, 
 ### Selection criteria
 
 Dependencies are added only when they provide substantial value over a hand-rolled solution. For this library
-specifically, we maintain zero runtime dependencies — `@smithy/types` is compile-time only.
+specifically, we maintain zero runtime dependencies. `@smithy/types` is compile-time only.
 
 Dev dependencies should be:
 

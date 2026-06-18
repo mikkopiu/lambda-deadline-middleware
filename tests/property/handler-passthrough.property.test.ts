@@ -1,7 +1,7 @@
 import { test, fc } from "@fast-check/vitest";
 import { describe, expect } from "vitest";
 
-import { withLambdaDeadline } from "../../src/handler-wrapper.js";
+import { withLambdaDeadline } from "../../src/context-store.js";
 
 /**
  * Handler wrapper preserves errors

@@ -1,156 +1,276 @@
+/* oxlint-disable typescript/require-await -- handler stubs are async without await to satisfy Promise-returning handler interface */
 import { describe, it, expect } from "vitest";
 
-import { run, getRemainingTimeInMillis } from "../../src/context-store.js";
+import {
+  setDeadlineSignal,
+  getDeadlineSignal,
+  withLambdaDeadline,
+} from "../../src/context-store.js";
+import { DeadlineExceededError } from "../../src/error.js";
 
-describe("context-store", () => {
-  describe("getRemainingTimeInMillis() outside run() scope", () => {
-    it("returns undefined when called outside any run() scope", () => {
-      expect(getRemainingTimeInMillis()).toBeUndefined();
-    });
+import type { LambdaContextLike } from "../../src/context-store.js";
+
+describe("withLambdaDeadline", () => {
+  it("returns a function with same handler signature", () => {
+    const handler = async (_event: unknown, _context: LambdaContextLike) => ({ statusCode: 200 });
+    const wrapped = withLambdaDeadline(handler);
+    expect(typeof wrapped).toBe("function");
   });
 
-  describe("run() with valid context", () => {
-    it("returns the callback's return value", () => {
-      const context = { getRemainingTimeInMillis: () => 5000 };
-      const result = run(context, () => "hello");
-      expect(result).toBe("hello");
-    });
+  it("preserves the return value of the handler", async () => {
+    const expected = { statusCode: 200, body: "hello" };
+    const handler = async () => expected;
+    const wrapped = withLambdaDeadline(handler);
 
-    it("makes getRemainingTimeInMillis() accessible within the callback", () => {
-      const context = { getRemainingTimeInMillis: () => 3000 };
-      let captured: number | undefined;
-      run(context, () => {
-        captured = getRemainingTimeInMillis();
-      });
-      expect(captured).toBe(3000);
-    });
-
-    it("delegates to the stored context's method on each call", () => {
-      let remaining = 5000;
-      const context = { getRemainingTimeInMillis: () => remaining };
-
-      run(context, () => {
-        expect(getRemainingTimeInMillis()).toBe(5000);
-        remaining = 3000;
-        expect(getRemainingTimeInMillis()).toBe(3000);
-      });
-    });
+    const context: LambdaContextLike = {
+      getRemainingTimeInMillis: () => 5000,
+    };
+    const result = await wrapped({}, context);
+    expect(result).toBe(expected);
   });
 
-  describe("run() with null context", () => {
-    it("does not throw", () => {
-      expect(() => run(null, () => "ok")).not.toThrow();
-    });
+  it("propagates errors without wrapping", async () => {
+    const error = new Error("handler failed");
+    const handler = async () => {
+      throw error;
+    };
+    const wrapped = withLambdaDeadline(handler);
 
-    it("returns undefined from getRemainingTimeInMillis()", () => {
-      let captured: number | undefined = 999;
-      run(null, () => {
-        captured = getRemainingTimeInMillis();
-      });
-      expect(captured).toBeUndefined();
-    });
+    const context: LambdaContextLike = {
+      getRemainingTimeInMillis: () => 5000,
+    };
+    await expect(wrapped({}, context)).rejects.toBe(error);
   });
 
-  describe("run() with undefined context", () => {
-    it("does not throw", () => {
-      expect(() => run(undefined, () => "ok")).not.toThrow();
-    });
+  it("creates a deadline signal from context when no external signal is set", async () => {
+    let captured: AbortSignal | undefined;
+    const handler = async () => {
+      captured = getDeadlineSignal();
+      return "done";
+    };
+    const wrapped = withLambdaDeadline(handler);
 
-    it("returns undefined from getRemainingTimeInMillis()", () => {
-      let captured: number | undefined = 999;
-      run(undefined, () => {
-        captured = getRemainingTimeInMillis();
-      });
-      expect(captured).toBeUndefined();
-    });
+    const context: LambdaContextLike = {
+      getRemainingTimeInMillis: () => 5000,
+    };
+    await wrapped({}, context);
+    expect(captured).toBeDefined();
+    expect(captured).toBeInstanceOf(AbortSignal);
+    expect(captured?.aborted).toBe(false);
   });
 
-  describe("run() with context missing getRemainingTimeInMillis", () => {
-    it("does not throw", () => {
-      const context = {};
-      expect(() => run(context, () => "ok")).not.toThrow();
-    });
+  it("handles null context without throwing", async () => {
+    const handler = async (_event: unknown, _context: LambdaContextLike) => "ok";
+    const wrapped = withLambdaDeadline(handler);
 
-    it("returns undefined from getRemainingTimeInMillis()", () => {
-      const context = {};
-      let captured: number | undefined = 999;
-      run(context, () => {
-        captured = getRemainingTimeInMillis();
-      });
-      expect(captured).toBeUndefined();
-    });
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- testing null context edge case
+    const result = await wrapped({}, null as unknown as LambdaContextLike);
+    expect(result).toBe("ok");
   });
 
-  describe("isolation", () => {
-    it("nested run() scopes see their own context", () => {
-      const outer = { getRemainingTimeInMillis: () => 9000 };
-      const inner = { getRemainingTimeInMillis: () => 2000 };
+  it("handles undefined context without throwing", async () => {
+    const handler = async (_event: unknown, _context: LambdaContextLike) => "ok";
+    const wrapped = withLambdaDeadline(handler);
 
-      run(outer, () => {
-        expect(getRemainingTimeInMillis()).toBe(9000);
-        run(inner, () => {
-          expect(getRemainingTimeInMillis()).toBe(2000);
-        });
-        expect(getRemainingTimeInMillis()).toBe(9000);
-      });
-    });
-
-    it("concurrent async operations read their own context", async () => {
-      const contextA = { getRemainingTimeInMillis: () => 1000 };
-      const contextB = { getRemainingTimeInMillis: () => 8000 };
-
-      const [resultA, resultB] = await Promise.all([
-        new Promise<number | undefined>((resolve) => {
-          run(contextA, () => {
-            setTimeout(() => {
-              resolve(getRemainingTimeInMillis());
-            }, 10);
-          });
-        }),
-        new Promise<number | undefined>((resolve) => {
-          run(contextB, () => {
-            setTimeout(() => {
-              resolve(getRemainingTimeInMillis());
-            }, 10);
-          });
-        }),
-      ]);
-
-      expect(resultA).toBe(1000);
-      expect(resultB).toBe(8000);
-    });
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- testing undefined context edge case
+    const result = await wrapped({}, undefined as unknown as LambdaContextLike);
+    expect(result).toBe("ok");
   });
 
-  describe("store === undefined vs store === NO_CONTEXT guard", () => {
-    it("returns undefined when store is NO_CONTEXT (null context passed to run)", () => {
-      let result: number | undefined = 999;
-      run(null, () => {
-        result = getRemainingTimeInMillis();
-      });
-      expect(result).toBeUndefined();
-    });
+  it("does not set a deadline signal when context is null", async () => {
+    let captured: AbortSignal | undefined = AbortSignal.timeout(999);
+    const handler = async () => {
+      captured = getDeadlineSignal();
+      return "done";
+    };
+    const wrapped = withLambdaDeadline(handler);
 
-    it("returns undefined rather than throwing when context has no method", () => {
-      let result: number | undefined = 999;
-      run({}, () => {
-        result = getRemainingTimeInMillis();
-      });
-      expect(result).toBeUndefined();
-    });
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- testing null context edge case
+    await wrapped({}, null as unknown as LambdaContextLike);
+    expect(captured).toBeUndefined();
   });
 
-  describe("return value propagation", () => {
-    it("returns synchronous values from callback", () => {
-      const context = { getRemainingTimeInMillis: () => 5000 };
-      const result = run(context, () => 42);
-      expect(result).toBe(42);
-    });
+  it("handles context without getRemainingTimeInMillis method", async () => {
+    let captured: AbortSignal | undefined = AbortSignal.timeout(999);
+    const handler = async () => {
+      captured = getDeadlineSignal();
+      return "done";
+    };
+    const wrapped = withLambdaDeadline(handler);
 
-    it("returns promises from async callbacks", async () => {
-      const context = { getRemainingTimeInMillis: () => 5000 };
-      // oxlint-disable-next-line typescript/require-await -- testing that run() propagates Promise return values
-      const result = await run(context, async () => "async-value");
-      expect(result).toBe("async-value");
-    });
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- testing empty context edge case
+    const context = {} as LambdaContextLike;
+    await wrapped({}, context);
+    expect(captured).toBeUndefined();
+  });
+
+  it("always returns a Promise", () => {
+    const handler = async () => 42;
+    const wrapped = withLambdaDeadline(handler);
+
+    const context: LambdaContextLike = {
+      getRemainingTimeInMillis: () => 5000,
+    };
+    const result = wrapped({}, context);
+    expect(result).toBeInstanceOf(Promise);
+  });
+
+  it("throws DeadlineExceededError when remaining time <= flush buffer", async () => {
+    const handler = async () => "should not reach";
+    const wrapped = withLambdaDeadline(handler, { flushBufferMs: 1000 });
+
+    const context: LambdaContextLike = {
+      getRemainingTimeInMillis: () => 500,
+    };
+
+    const error = await wrapped({}, context).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DeadlineExceededError);
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowing after instanceof check
+    const dee = error as DeadlineExceededError;
+    expect(dee.deadlineMs).toBe(0);
+    expect(dee.flushBufferMs).toBe(1000);
+    expect(dee.remainingMs).toBe(500);
+  });
+
+  it("throws DeadlineExceededError when remaining equals flush buffer", async () => {
+    const handler = async () => "should not reach";
+    const wrapped = withLambdaDeadline(handler, { flushBufferMs: 2000 });
+
+    const context: LambdaContextLike = {
+      getRemainingTimeInMillis: () => 2000,
+    };
+
+    const error = await wrapped({}, context).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DeadlineExceededError);
+  });
+
+  it("uses default flushBufferMs of 1000 when no options provided", async () => {
+    const handler = async () => "should not reach";
+    const wrapped = withLambdaDeadline(handler);
+
+    const context: LambdaContextLike = {
+      getRemainingTimeInMillis: () => 800,
+    };
+
+    const error = await wrapped({}, context).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DeadlineExceededError);
+  });
+
+  it("succeeds when remaining time > flush buffer", async () => {
+    const handler = async () => "ok";
+    const wrapped = withLambdaDeadline(handler, { flushBufferMs: 1000 });
+
+    const context: LambdaContextLike = {
+      getRemainingTimeInMillis: () => 5000,
+    };
+
+    const result = await wrapped({}, context);
+    expect(result).toBe("ok");
+  });
+});
+
+describe("setDeadlineSignal", () => {
+  it("throws when called outside a withLambdaDeadline() scope", () => {
+    const signal = new AbortController().signal;
+    expect(() => {
+      setDeadlineSignal(signal);
+    }).toThrow("setDeadlineSignal() must be called within a withLambdaDeadline() scope");
+  });
+
+  it("overwrites the auto-computed signal", async () => {
+    const controller = new AbortController();
+    const context: LambdaContextLike = { getRemainingTimeInMillis: () => 5000 };
+
+    let captured: AbortSignal | undefined;
+    const handler = async () => {
+      setDeadlineSignal(controller.signal);
+      captured = getDeadlineSignal();
+      return "done";
+    };
+    const wrapped = withLambdaDeadline(handler);
+
+    await wrapped({}, context);
+    expect(captured).toBe(controller.signal);
+  });
+
+  it("allows overwriting a previously set signal", async () => {
+    const first = new AbortController().signal;
+    const second = new AbortController().signal;
+    const context: LambdaContextLike = { getRemainingTimeInMillis: () => 5000 };
+
+    let captured: AbortSignal | undefined;
+    const handler = async () => {
+      setDeadlineSignal(first);
+      setDeadlineSignal(second);
+      captured = getDeadlineSignal();
+      return "done";
+    };
+    const wrapped = withLambdaDeadline(handler);
+
+    await wrapped({}, context);
+    expect(captured).toBe(second);
+  });
+});
+
+describe("getDeadlineSignal", () => {
+  it("returns undefined outside a withLambdaDeadline() scope", () => {
+    expect(getDeadlineSignal()).toBeUndefined();
+  });
+
+  it("returns the auto-computed signal when no external signal is set", async () => {
+    const context: LambdaContextLike = { getRemainingTimeInMillis: () => 5000 };
+
+    let captured: AbortSignal | undefined;
+    const handler = async () => {
+      captured = getDeadlineSignal();
+      return "done";
+    };
+    const wrapped = withLambdaDeadline(handler);
+
+    await wrapped({}, context);
+    expect(captured).toBeDefined();
+    expect(captured).toBeInstanceOf(AbortSignal);
+  });
+
+  it("returns undefined when context has no getRemainingTimeInMillis", async () => {
+    let captured: AbortSignal | undefined = AbortSignal.timeout(999);
+    const handler = async () => {
+      captured = getDeadlineSignal();
+      return "done";
+    };
+    const wrapped = withLambdaDeadline(handler);
+
+    await wrapped({}, {});
+    expect(captured).toBeUndefined();
+  });
+
+  it("isolates signals between concurrent async contexts", async () => {
+    const signalA = new AbortController().signal;
+    const signalB = new AbortController().signal;
+    const contextA: LambdaContextLike = { getRemainingTimeInMillis: () => 5000 };
+    const contextB: LambdaContextLike = { getRemainingTimeInMillis: () => 8000 };
+
+    const handlerA = async () => {
+      setDeadlineSignal(signalA);
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
+      return getDeadlineSignal();
+    };
+    const handlerB = async () => {
+      setDeadlineSignal(signalB);
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
+      return getDeadlineSignal();
+    };
+
+    const [resultA, resultB] = await Promise.all([
+      withLambdaDeadline(handlerA)({}, contextA),
+      withLambdaDeadline(handlerB)({}, contextB),
+    ]);
+
+    expect(resultA).toBe(signalA);
+    expect(resultB).toBe(signalB);
   });
 });
