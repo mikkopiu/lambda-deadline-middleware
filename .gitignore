@@ -28,6 +28,10 @@ id_ed25519
 .DS_Store
 Thumbs.db
 
+# Stryker mutation testing
+.stryker-tmp/
+stryker.log
+
 # Build artifacts
 *.tsbuildinfo
 bench-results.json
