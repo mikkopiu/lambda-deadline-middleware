@@ -147,19 +147,22 @@ alters observable behavior, adds a new code path, or fixes a bug.
 
 The CI pipeline (GitHub Actions) runs the following checks on every PR against `main`:
 
-| Check                    | Tool                    | Blocking | Reporting                       |
-| ------------------------ | ----------------------- | -------- | ------------------------------- |
-| Lint + format            | oxlint, oxfmt, knip     | Yes      | Console output                  |
-| Type check               | tsc                     | Yes      | Console output                  |
-| Unit + integration tests | vitest                  | Yes      | GHA annotations, JUnit artifact |
-| Property-based tests     | vitest                  | Yes      | GHA annotations                 |
-| Benchmarks               | vitest bench            | Yes      | Console output                  |
-| SAST                     | opengrep                | Yes      | SARIF → Code Scanning           |
-| SCA                      | trivy                   | Yes      | SARIF → Code Scanning           |
-| CI/CD lint               | actionlint              | Yes      | Console output                  |
-| Secret scanning          | gitleaks                | Yes      | Console output                  |
-| REUSE compliance         | reuse                   | Yes      | Console output                  |
-| Build                    | node (scripts/build.ts) | Yes      | Console output                  |
+| Check                    | Tool                    | Blocking | Reporting                     |
+| ------------------------ | ----------------------- | -------- | ----------------------------- |
+| Lint                     | oxlint                  | Yes      | SARIF → Code Scanning         |
+| Format                   | oxfmt                   | Yes      | Console output                |
+| Unused exports/deps      | knip                    | Yes      | GHA annotations               |
+| Type check               | tsc                     | Yes      | GHA annotations               |
+| Unit + integration tests | vitest                  | Yes      | GHA annotations + Job Summary |
+| Property-based tests     | vitest                  | Yes      | GHA annotations + Job Summary |
+| Benchmarks               | vitest bench            | Yes      | Console output                |
+| Mutation testing         | stryker                 | Yes      | HTML artifact                 |
+| SAST                     | opengrep                | Yes      | SARIF → Code Scanning         |
+| SCA                      | trivy                   | Yes      | SARIF → Code Scanning         |
+| CI/CD lint               | actionlint              | Yes      | SARIF → Code Scanning         |
+| Secret scanning          | gitleaks                | Yes      | Console output                |
+| REUSE compliance         | reuse                   | Yes      | Console output                |
+| Build                    | node (scripts/build.ts) | Yes      | Console output                |
 
 All checks must pass before a PR can be merged.
 
