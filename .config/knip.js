@@ -6,6 +6,8 @@ export default {
   project: ["src/**/*.ts"],
   ignoreBinaries: ["scripts/ensure-opengrep.sh", "podman"],
   ignoreDependencies: [
+    "@commitlint/cli",
+    "@commitlint/config-conventional",
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
     "@semantic-release/npm",
