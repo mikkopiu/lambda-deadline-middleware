@@ -72,7 +72,12 @@ export const withLambdaDeadline =
         if (rawBuffer < 0) {
           throw new TypeError(`flushBufferMs option must be non-negative, received: ${rawBuffer}`);
         }
-        const deadline = remaining - rawBuffer;
+
+        if (!Number.isFinite(remaining) || !Number.isFinite(rawBuffer)) {
+          return contextStorage.run(store, async () => handler(event, context));
+        }
+
+        const deadline = Math.floor(remaining - rawBuffer);
 
         if (deadline <= 0) {
           throw new DeadlineExceededError({
