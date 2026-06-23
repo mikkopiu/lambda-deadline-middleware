@@ -147,17 +147,19 @@ alters observable behavior, adds a new code path, or fixes a bug.
 
 The CI pipeline (GitHub Actions) runs the following checks on every PR against `main`:
 
-| Check                    | Tool       | Blocking | Reporting                       |
-| ------------------------ | ---------- | -------- | ------------------------------- |
-| Lint + format            | oxlint, oxfmt, knip | Yes | Console output              |
-| Type check               | tsc        | Yes      | Console output                  |
-| Unit + integration tests | vitest     | Yes      | GHA annotations, JUnit artifact |
-| Property-based tests     | vitest     | Yes      | GHA annotations                 |
-| Benchmarks               | vitest bench | Yes    | Console output                  |
-| SAST                     | opengrep   | Yes      | SARIF → Code Scanning           |
-| SCA                      | trivy      | Yes      | SARIF → Code Scanning           |
-| CI/CD lint               | actionlint | Yes      | Console output                  |
-| Secret scanning          | gitleaks   | Yes      | Console output                  |
+| Check                    | Tool                    | Blocking | Reporting                       |
+| ------------------------ | ----------------------- | -------- | ------------------------------- |
+| Lint + format            | oxlint, oxfmt, knip     | Yes      | Console output                  |
+| Type check               | tsc                     | Yes      | Console output                  |
+| Unit + integration tests | vitest                  | Yes      | GHA annotations, JUnit artifact |
+| Property-based tests     | vitest                  | Yes      | GHA annotations                 |
+| Benchmarks               | vitest bench            | Yes      | Console output                  |
+| SAST                     | opengrep                | Yes      | SARIF → Code Scanning           |
+| SCA                      | trivy                   | Yes      | SARIF → Code Scanning           |
+| CI/CD lint               | actionlint              | Yes      | Console output                  |
+| Secret scanning          | gitleaks                | Yes      | Console output                  |
+| REUSE compliance         | reuse                   | Yes      | Console output                  |
+| Build                    | node (scripts/build.ts) | Yes      | Console output                  |
 
 All checks must pass before a PR can be merged.
 
@@ -172,9 +174,6 @@ pnpm test:watch
 
 # Benchmarks
 pnpm bench
-
-# Mutation testing
-pnpm mutation
 ```
 
 ### Test organization
@@ -209,9 +208,9 @@ in CI. The `packageManager` field in `package.json` pins the exact pnpm version 
 [Renovate](https://docs.renovatebot.com/) opens automated PRs weekly for dependency updates. Configuration is in
 `.github/renovate.json5`. Key policies:
 
-- **Minimum release age**: 1 day (avoids publishing accidents)
+- **Minimum release age**: 3 days (avoids publishing accidents)
 - **GitHub Actions**: Pinned by digest, updated automatically
-- **Grouping**: All non-major updates are grouped into a single PR
+- **Grouping**: Related tools grouped into single PRs (e.g. all trivy updates together)
 
 All dependency update PRs must pass the full CI pipeline before merge.
 
@@ -223,7 +222,7 @@ When you're ready to release:
 
 1. Go to **Actions → Release → Run workflow** (select `main` branch)
 2. Optionally enable "Run without publishing" for a dry run
-3. The workflow runs the full build/test pipeline, then [semantic-release](https://github.com/semantic-release/semantic-release) determines the version bump from all commits since the last release tag
+3. The workflow verifies that CI has passed on the same commit, builds the package, then [semantic-release](https://github.com/semantic-release/semantic-release) determines the version bump from all commits since the last release tag
 
 semantic-release uses Conventional Commits to decide what to publish:
 

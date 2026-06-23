@@ -109,7 +109,6 @@ repository:
         rulesets:
           - p/typescript
           - p/security-audit
-          - p/owasp-top-ten
         features:
           - intrafile cross-function taint analysis (--taint-intrafile)
         integration:
@@ -129,10 +128,10 @@ repository:
               annotations and Security tab visibility.
         comment: >-
           Pattern-based SAST scanner using community-maintained rules covering
-          OWASP Top 10, TypeScript-specific security patterns, and injection
-          vulnerabilities. Runs with intrafile cross-function taint analysis
-          for deeper data-flow tracking. Opengrep is a community-governed fork
-          of Semgrep CE with no vendor lock-in.
+          TypeScript-specific security patterns and injection vulnerabilities.
+          Runs with intrafile cross-function taint analysis for deeper
+          data-flow tracking. Opengrep is a community-governed fork of Semgrep
+          CE with no vendor lock-in.
 
       - name: Trivy
         type: SCA
