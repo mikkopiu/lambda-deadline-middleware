@@ -61,6 +61,11 @@ describe("isDeadlineExceeded", () => {
     expect(isDeadlineExceeded(error)).toBe(true);
   });
 
+  it("returns false for a function with matching name", () => {
+    const fn = function DeadlineExceededError() {}; // oxlint-disable-line no-shadow, func-name-matching -- Intentional shadow
+    expect(isDeadlineExceeded(fn)).toBe(false);
+  });
+
   it("returns false for null", () => {
     expect(isDeadlineExceeded(null)).toBe(false);
   });
