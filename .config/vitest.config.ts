@@ -3,6 +3,8 @@
 
 import { defineConfig } from "vitest/config";
 
+const isGitHubActions = process.env.GITHUB_ACTIONS === "true";
+
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts", "tests/**/*.property.test.ts"],
@@ -27,10 +29,7 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       exclude: ["src/index.ts"],
     },
-    reporters: ["default", "github-actions", "junit"],
-    outputFile: {
-      junit: "test-results/junit.xml",
-    },
+    reporters: isGitHubActions ? ["default", "github-actions"] : ["default"],
     benchmark: {
       include: ["tests/bench/**/*.bench.ts"],
     },

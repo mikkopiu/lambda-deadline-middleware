@@ -53,6 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write
     env:
       # ubuntu-latest (public): 4 vCPU, 16 GB RAM
       NODE_OPTIONS: "--max-old-space-size=14336"
@@ -62,6 +63,7 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            api.github.com:443
             github.com:443
             registry.npmjs.org:443
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -74,7 +76,15 @@ jobs:
         with:
           path: node_modules
           key: deps-${{ hashFiles('pnpm-lock.yaml') }}
-      - run: pnpm run lint:check && pnpm run fmt:check && pnpm run lint:knip
+      - run: pnpm run lint:check:ci
+      - run: pnpm run fmt:check
+      - run: pnpm run lint:knip --reporter github-actions
+      - name: Upload oxlint SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: reports/oxlint-results.sarif
+          category: oxlint
 
   typecheck:
     needs: deps
@@ -111,13 +121,6 @@ jobs:
           path: node_modules
           key: deps-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm run test -- --coverage
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: test-results
-          path: test-results/junit.xml
-          retention-days: 30
 
   bench:
     needs: deps
@@ -243,6 +246,7 @@ jobs:
     runs-on: ubuntu-slim
     permissions:
       contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Install actionlint v1.7.12 (attestation-verified)
@@ -259,6 +263,17 @@ jobs:
           sudo mv actionlint /usr/local/bin/actionlint
       - name: Run actionlint
         run: actionlint
+      - name: Run actionlint (SARIF)
+        if: always()
+        run: |
+          mkdir -p reports
+          actionlint -format "$(cat .config/actionlint-sarif.tmpl)" > reports/actionlint-results.sarif || true
+      - name: Upload actionlint SARIF to Code Scanning
+        if: always() && hashFiles('reports/actionlint-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: reports/actionlint-results.sarif
+          category: actionlint
 
   reuse:
     runs-on: ubuntu-latest
