@@ -37,6 +37,7 @@
     "typecheck": "tsc",
     "lint": "oxlint --fix .",
     "lint:check": "oxlint .",
+    "lint:check:ci": "mkdir -p reports && oxlint --format sarif . > reports/oxlint-results.sarif",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
     "lint:knip": "knip --config .config/knip.js",
