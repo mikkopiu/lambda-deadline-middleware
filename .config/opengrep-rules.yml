@@ -42,3 +42,46 @@ rules:
     message: All exports must be const or class declarations — no mutable let exports
     languages: [typescript]
     severity: ERROR
+
+  - id: require-harden-runner-on-ubuntu-latest
+    patterns:
+      - pattern: |
+          runs-on: ubuntu-latest
+          ...
+          steps:
+            - uses: $FIRST_USES
+              ...
+            - ...
+      - metavariable-regex:
+          metavariable: $FIRST_USES
+          regex: "^(?!step-security/harden-runner@).*"
+    paths:
+      include:
+        - .github/workflows/
+    message: >-
+      Jobs running on ubuntu-latest must include step-security/harden-runner
+      as the first step. Harden Runner is not supported on ubuntu-slim runners.
+    languages: [yaml]
+    severity: ERROR
+
+  - id: no-harden-runner-on-ubuntu-slim
+    patterns:
+      - pattern: |
+          - uses: $USES
+            ...
+      - pattern-inside: |
+          runs-on: ubuntu-slim
+          ...
+          steps:
+            - ...
+      - metavariable-regex:
+          metavariable: $USES
+          regex: "^step-security/harden-runner@"
+    paths:
+      include:
+        - .github/workflows/
+    message: >-
+      Do not use step-security/harden-runner on ubuntu-slim runners — it is not
+      supported and adds a pointless step.
+    languages: [yaml]
+    severity: ERROR
