@@ -66,7 +66,7 @@ flowchart LR
 ## Requirements
 
 - Node.js ≥ 24
-- AWS SDK v3 (built against `@smithy/types` ≥ 3.0.0)
+- AWS SDK v3 (built against `@smithy/types` ≥ 4.0.0)
 
 ## Installation
 
