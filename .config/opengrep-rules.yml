@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 lambda-deadline-middleware contributors
+# SPDX-License-Identifier: MIT
+
+rules:
+  - id: no-wildcard-reexport
+    patterns:
+      - pattern: export * from "..."
+    paths:
+      include:
+        - src/
+    message: Use explicit named exports — no wildcard re-exports
+    languages: [typescript]
+    severity: ERROR
+
+  - id: no-console
+    patterns:
+      - pattern: console.$METHOD(...)
+    paths:
+      include:
+        - src/
+    message: Libraries must not write to console
+    languages: [typescript]
+    severity: ERROR
+
+  - id: no-timers
+    pattern-either:
+      - pattern: setTimeout(...)
+      - pattern: setInterval(...)
+    paths:
+      include:
+        - src/
+    message: Use AbortSignal.timeout instead of setTimeout/setInterval
+    languages: [typescript]
+    severity: ERROR
+
+  - id: no-mutable-let-export
+    patterns:
+      - pattern: export let $X = ...
+    paths:
+      include:
+        - src/
+    message: All exports must be const or class declarations — no mutable let exports
+    languages: [typescript]
+    severity: ERROR
