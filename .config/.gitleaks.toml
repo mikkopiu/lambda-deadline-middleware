@@ -1,7 +1,7 @@
 title = "gitleaks config"
 
 [allowlist]
-paths = ['''node_modules''', '''dist''', '''pnpm-lock\.yaml''', '''\.gitleaks\.toml''']
+paths = ['''node_modules''', '''dist''', '''pnpm-lock\.yaml''', '''\.config/\.gitleaks\.toml''']
 
 [[rules]]
 id = "aws-access-key-id"
