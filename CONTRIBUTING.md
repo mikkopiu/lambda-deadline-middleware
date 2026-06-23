@@ -147,17 +147,17 @@ alters observable behavior, adds a new code path, or fixes a bug.
 
 The CI pipeline (GitHub Actions) runs the following checks on every PR against `main`:
 
-| Check                    | Command                                                                                                              | Blocking | Reporting                       |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------- |
-| Lint + format            | `oxlint`, `oxfmt --check`, `knip`                                                                                    | Yes      | Console output                  |
-| Type check               | `tsc --noEmit`                                                                                                       | Yes      | Console output                  |
-| Unit + integration tests | `vitest run --coverage`                                                                                              | Yes      | GHA annotations, JUnit artifact |
-| Property-based tests     | Included in vitest run                                                                                               | Yes      | GHA annotations                 |
-| Benchmarks               | `vitest bench` with threshold validation                                                                             | Yes      | Console output                  |
-| SAST                     | `opengrep scan --config p/typescript --config p/security-audit --config p/owasp-top-ten --taint-intrafile --error .` | Yes      | SARIF → Code Scanning           |
-| SCA                      | `trivy fs --scanners vuln --severity HIGH,CRITICAL`                                                                  | Yes      | SARIF → Code Scanning           |
-| CI/CD lint               | `actionlint`                                                                                                         | Yes      | Console output                  |
-| Secret scanning          | `gitleaks`                                                                                                           | Yes      | Console output                  |
+| Check                    | Tool       | Blocking | Reporting                       |
+| ------------------------ | ---------- | -------- | ------------------------------- |
+| Lint + format            | oxlint, oxfmt, knip | Yes | Console output              |
+| Type check               | tsc        | Yes      | Console output                  |
+| Unit + integration tests | vitest     | Yes      | GHA annotations, JUnit artifact |
+| Property-based tests     | vitest     | Yes      | GHA annotations                 |
+| Benchmarks               | vitest bench | Yes    | Console output                  |
+| SAST                     | opengrep   | Yes      | SARIF → Code Scanning           |
+| SCA                      | trivy      | Yes      | SARIF → Code Scanning           |
+| CI/CD lint               | actionlint | Yes      | Console output                  |
+| Secret scanning          | gitleaks   | Yes      | Console output                  |
 
 All checks must pass before a PR can be merged.
 
@@ -207,7 +207,7 @@ in CI. The `packageManager` field in `package.json` pins the exact pnpm version 
 ### Tracking and updates
 
 [Renovate](https://docs.renovatebot.com/) opens automated PRs weekly for dependency updates. Configuration is in
-`.renovaterc`. Key policies:
+`.github/renovate.json5`. Key policies:
 
 - **Minimum release age**: 1 day (avoids publishing accidents)
 - **GitHub Actions**: Pinned by digest, updated automatically
