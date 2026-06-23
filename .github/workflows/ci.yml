@@ -176,7 +176,14 @@ jobs:
         with:
           path: node_modules
           key: deps-${{ hashFiles('pnpm-lock.yaml') }}
-      - run: pnpm run mutate
+      - run: pnpm stryker run --reporters clear-text,html
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-report
+          path: reports/mutation/index.html
+          retention-days: 30
 
   sast:
     runs-on: ubuntu-latest
