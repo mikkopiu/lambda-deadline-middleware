@@ -3,6 +3,9 @@
   "mutate": ["src/**/*.ts", "!src/index.ts"],
   "testRunner": "vitest",
   "plugins": ["@stryker-mutator/vitest-runner"],
+  "vitest": {
+    "configFile": ".config/vitest.stryker.config.ts"
+  },
   "reporters": ["clear-text", "html", "progress"],
   "htmlReporter": {
     "fileName": "reports/mutation/index.html"
@@ -13,5 +16,6 @@
     "break": 90
   },
   "tempDirName": ".stryker-tmp",
-  "cleanTempDir": "always"
+  "cleanTempDir": "always",
+  "ignoreStatic": true
 }
