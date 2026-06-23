@@ -8,10 +8,12 @@
     "url": "https://github.com/mikkopiu/lambda-deadline-middleware"
   },
   "files": [
-    "dist",
-    "src",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.map",
+    "src/**/*.ts",
     "LICENSE",
-    "LICENSES",
+    "LICENSES/*.txt",
     "REUSE.toml",
     "SECURITY.md"
   ],
