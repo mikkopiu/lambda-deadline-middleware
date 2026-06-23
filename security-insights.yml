@@ -6,8 +6,8 @@
 
 header:
   schema-version: 2.2.0
-  last-updated: "2026-06-12"
-  last-reviewed: "2026-06-12"
+  last-updated: "2026-06-24"
+  last-reviewed: "2026-06-24"
   url: https://raw.githubusercontent.com/mikkopiu/lambda-deadline-middleware/main/security-insights.yml
   comment: >-
     Zero-dependency AWS SDK v3 middleware for automatic Lambda deadline
@@ -100,7 +100,7 @@ repository:
           vulnerability scanning) and Renovate (automated dependency updates).
           CI/CD workflow correctness validated by actionlint. No formal
           third-party security audit has been conducted.
-        date: "2026-06-12"
+        date: "2026-06-24"
 
     tools:
       - name: Opengrep
@@ -178,6 +178,8 @@ repository:
               Static analysis of GitHub Actions workflow YAML files. Binary
               downloaded from GitHub Release and verified via gh attestation
               verify (SLSA provenance). Locally runs as digest-pinned container.
+              SARIF results uploaded to GitHub Code Scanning for inline PR
+              annotations and Security tab visibility.
         comment: >-
           Static checker for GitHub Actions workflow files. Validates workflow
           syntax, expression correctness, action version references, and shell
@@ -218,7 +220,10 @@ repository:
             name: oxlint CI results
             location: https://github.com/mikkopiu/lambda-deadline-middleware/actions
             predicate-uri: https://oxc.rs/docs/guide/usage/linter
-            comment: Static analysis runs in both CI and release workflows.
+            comment: >-
+              Static analysis runs in both CI and release workflows.
+              SARIF results uploaded to GitHub Code Scanning for inline PR
+              annotations and Security tab visibility.
         comment: >-
           Fast Rust-based JavaScript/TypeScript linter providing static analysis
           for code quality and potential security issues.
@@ -301,7 +306,9 @@ repository:
             predicate-uri: https://github.com/step-security/harden-runner
             comment: >-
               Monitors network egress, file integrity, and process activity on
-              CI runners. Detects supply-chain attacks in real time.
+              ubuntu-latest CI runners. Not supported on ubuntu-slim runners.
+              Enforces egress-policy: block with explicit allowed-endpoints.
         comment: >-
           CI/CD runtime security agent providing network egress monitoring and
-          anomaly detection for GitHub Actions runners.
+          anomaly detection for GitHub Actions ubuntu-latest runners. Not
+          supported on ubuntu-slim runners (no-op).
