@@ -7,25 +7,25 @@ Contributions are welcome. This document covers the development workflow, toolin
 
 ## Prerequisites
 
-- **Node.js 24+**: install via [fnm](https://github.com/Schniz/fnm): `fnm use` (reads `.node-version`)
-- **pnpm**: install via `corepack enable` (ships with Node.js)
-- **Git**: with hooks support (lefthook manages pre-commit)
+- **Node.js 24+**: install via e.g. [fnm](https://github.com/Schniz/fnm): `fnm use` (reads `.node-version`)
+- **pnpm**: install via `corepack enable`, or follow [official docs](https://pnpm.io/installation)
+- **Git**: with hooks support (`lefthook` manages pre-commit)
 
 ## Setup
 
-```bash
+```sh
 git clone <repo-url>
 cd lambda-deadline-middleware
 pnpm install
 ```
 
-This installs dependencies and sets up git hooks via lefthook.
+This installs dependencies and sets up git hooks via `lefthook`.
 
 ## Development Workflow
 
 ### Running Tests
 
-```bash
+```sh
 # All tests
 pnpm test
 
@@ -39,19 +39,37 @@ pnpm bench
 pnpm typecheck
 ```
 
-### Linting
+### Formatting and Linting
 
-```bash
-# oxlint (fast, Rust-based linter)
+```sh
+# Format (oxfmt)
+pnpm fmt
+
+# Lint (oxlint)
 pnpm lint
 
 # Unused exports/dependencies detection
 pnpm lint:knip
 ```
 
+### Security Scanning
+
+```sh
+# SAST (opengrep)
+pnpm sast
+
+# SCA / vulnerability scanning (trivy, requires podman)
+pnpm sca
+
+# CI workflow linting (actionlint, requires podman)
+pnpm actionlint
+```
+
+Gitleaks runs automatically via the lefthook pre-commit hook.
+
 ### Building
 
-```bash
+```sh
 pnpm build
 ```
 
@@ -59,7 +77,7 @@ Produces declaration files (`.d.ts`) and JavaScript output in `dist/`.
 
 ### SBOM Generation
 
-```bash
+```sh
 pnpm sbom
 ```
 
@@ -67,59 +85,15 @@ Produces `sbom.cdx.json` using CycloneDX.
 
 ## Commit Conventions
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/). All commits are validated by commitlint
+This project uses [Conventional Commits](https://www.conventionalcommits.org/). Commits are validated by commitlint
 via a pre-commit hook.
 
-### Format
+Version bumps are determined automatically by semantic-release:
 
-```
-<type>(<scope>): <description>
-
-[optional body]
-
-[optional footer(s)]
-```
-
-### Types
-
-| Type       | Purpose                                    |
-| ---------- | ------------------------------------------ |
-| `feat`     | New feature (triggers minor version bump)  |
-| `fix`      | Bug fix (triggers patch version bump)      |
-| `docs`     | Documentation changes                      |
-| `refactor` | Code restructuring without behavior change |
-| `test`     | Adding or modifying tests                  |
-| `perf`     | Performance improvements                   |
-| `ci`       | CI/CD configuration changes                |
-| `chore`    | Maintenance tasks (deps, tooling)          |
-
-### Breaking Changes
-
-Append `!` after type/scope or include `BREAKING CHANGE:` in the footer:
-
-```
-feat!: rename withDeadline to withRequestDeadline
-
-BREAKING CHANGE: withDeadline is now withRequestDeadline for clarity.
-```
-
-## Pull Request Workflow
-
-1. Create a feature branch from `main`
-2. Make your changes with appropriate tests
-3. Ensure all checks pass locally: `pnpm typecheck && pnpm lint && pnpm test`
-4. Push and open a PR against `main`
-5. CI runs lint, type check, tests, benchmarks, and secret scanning
-6. At least one approval required before merge
-
-### PR Checklist
-
-- [ ] Tests added/updated for new behavior
-- [ ] Property tests cover invariants where applicable
-- [ ] Type checking passes (`pnpm typecheck`)
-- [ ] Linting passes (`pnpm lint`)
-- [ ] No unused exports (`pnpm lint:knip`)
-- [ ] Commit messages follow Conventional Commits
+- `feat` → minor
+- `fix` / `perf` / `revert` → patch
+- `BREAKING CHANGE` footer or `!` suffix → major
+- `docs` / `chore` / `ci` / `test` → no release
 
 ## Code Style
 
@@ -133,101 +107,49 @@ Key points:
 
 ## Testing Policy
 
-All major changes to the library must include corresponding test updates. A "major change" is any modification that
-alters observable behavior, adds a new code path, or fixes a bug.
+All changes that alter observable behavior, add a code path, or fix a bug must include corresponding tests.
 
-### Requirements
+### Test types and when to use them
 
-- **New features**: Must include unit tests and, where applicable, property-based tests covering invariants.
-- **Bug fixes**: Must include a regression test that fails without the fix.
-- **Refactors**: Must not reduce coverage. If existing tests pass, no new tests are required.
-- **Performance changes**: Must include benchmark results demonstrating the improvement.
+Tests live in `tests/` organized by type:
 
-### What runs in CI
+- **Unit tests** (`unit/`): Verify specific examples and edge cases. Fast feedback for individual functions. Write these
+  for any new or changed behavior.
+- **Property-based tests** (`property/`): Use fast-check to validate invariants across randomized inputs. Write these
+  when a function has a contract that should hold for _all_ valid inputs (e.g., "deadline is always less than the
+  remaining time", "handler return value is never modified").
+- **Integration tests** (`integration/`): Exercise the full middleware lifecycle with mocked SDK clients. Write these
+  when changes affect how components compose or interact with external interfaces.
+- **Benchmarks** (`bench/`): Prevent performance regressions. This middleware sits in the hot path of every SDK call,
+  so even small overhead is visible. Include benchmark results when making performance claims.
+- **Mutation testing** (Stryker, `pnpm mutate`): Verifies that tests actually detect faults by introducing small changes
+  to the source and checking that at least one test fails. Runs incrementally, only mutating code affected by your
+  changes. A surviving mutant indicates a gap in test coverage.
 
-The CI pipeline (GitHub Actions) runs the following checks on every PR against `main`:
+### What's expected per change type
 
-| Check                    | Tool                    | Blocking | Reporting                     |
-| ------------------------ | ----------------------- | -------- | ----------------------------- |
-| Lint                     | oxlint                  | Yes      | SARIF → Code Scanning         |
-| Format                   | oxfmt                   | Yes      | Console output                |
-| Unused exports/deps      | knip                    | Yes      | GHA annotations               |
-| Type check               | tsc                     | Yes      | GHA annotations               |
-| Unit + integration tests | vitest                  | Yes      | GHA annotations + Job Summary |
-| Property-based tests     | vitest                  | Yes      | GHA annotations + Job Summary |
-| Benchmarks               | vitest bench            | Yes      | Console output                |
-| Mutation testing         | stryker                 | Yes      | HTML artifact                 |
-| SAST                     | opengrep                | Yes      | SARIF → Code Scanning         |
-| SCA                      | trivy                   | Yes      | SARIF → Code Scanning         |
-| CI/CD lint               | actionlint              | Yes      | SARIF → Code Scanning         |
-| Secret scanning          | gitleaks                | Yes      | Console output                |
-| REUSE compliance         | reuse                   | Yes      | Console output                |
-| Build                    | node (scripts/build.ts) | Yes      | Console output                |
-
-All checks must pass before a PR can be merged.
-
-### Running tests locally
-
-```bash
-# Full test suite (same as CI)
-pnpm test
-
-# Watch mode for development
-pnpm test:watch
-
-# Benchmarks
-pnpm bench
-```
-
-### Test organization
-
-Tests live in `tests/` organized by type: `unit/`, `property/`, `integration/`, `bench/`.
-
-- **Property-based tests** (fast-check) validate universal invariants across all inputs
-- **Unit tests** validate specific examples and edge cases
-- **Integration tests** verify the full middleware lifecycle with mocked SDK clients
-- **Benchmarks** prevent performance regressions
+- **New features**: Unit tests + property tests covering invariants where applicable.
+- **Bug fixes**: A regression test that fails without the fix.
+- **Refactors**: Existing tests must still pass. No new tests required if behavior is unchanged.
+- **Performance changes**: Benchmark results demonstrating the improvement.
 
 ## Dependency Management
 
-### Selection criteria
+This library has zero runtime dependencies. `@smithy/types` is compile-time only.
 
-Dependencies are added only when they provide substantial value over a hand-rolled solution. For this library
-specifically, we maintain zero runtime dependencies. `@smithy/types` is compile-time only.
-
-Dev dependencies should be:
-
-- Actively maintained (releases within the last 6 months)
-- From well-known publishers with established track records
-- Pinned to exact versions in the lockfile (`pnpm-lock.yaml`)
-
-### How dependencies are obtained
-
-All dependencies are installed from the npm registry via pnpm with a frozen lockfile (`pnpm install --frozen-lockfile`)
-in CI. The `packageManager` field in `package.json` pins the exact pnpm version with a SHA-512 integrity hash.
-
-### Tracking and updates
-
-[Renovate](https://docs.renovatebot.com/) opens automated PRs weekly for dependency updates. Configuration is in
-`.github/renovate.json5`. Key policies:
-
-- **Minimum release age**: 3 days (avoids publishing accidents)
-- **GitHub Actions**: Pinned by digest, updated automatically
-- **Grouping**: Related tools grouped into single PRs (e.g. all trivy updates together)
-
-All dependency update PRs must pass the full CI pipeline before merge.
+Dev dependencies should be actively maintained, from well-known publishers, and pinned in the lockfile (including CI,
+i.e. no `pnpm exec` to install dynamic dependencies).
+[Renovate](https://docs.renovatebot.com/) opens automated PRs for dependency updates weekly (configuration in
+`.github/renovate.json5`).
 
 ## Releasing
 
-Releases are **manual**. Merging to `main` does not publish a new version automatically.
+Releases are published exclusively through CI. The decision to release is manual (triggered via
+**Actions → Release → Run workflow**), but the actual version bump, build, and publish are handled by
+[semantic-release](https://github.com/semantic-release/semantic-release) in the pipeline. Never publish from a local
+machine.
 
-When you're ready to release:
-
-1. Go to **Actions → Release → Run workflow** (select `main` branch)
-2. Optionally enable "Run without publishing" for a dry run
-3. The workflow verifies that CI has passed on the same commit, builds the package, then [semantic-release](https://github.com/semantic-release/semantic-release) determines the version bump from all commits since the last release tag
-
-semantic-release uses Conventional Commits to decide what to publish:
+semantic-release determines the version from commits since the last tag:
 
 - `feat` → minor bump
 - `fix` / `perf` / `revert` → patch bump
