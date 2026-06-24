@@ -26,6 +26,7 @@
 
     // Language and Environment
     "target": "ESNext",
+    "lib": ["ESNext"],
 
     // Emit
     "declaration": true,

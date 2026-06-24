@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // Relax settings that don't apply to config files (never consumed as packages)
+    "isolatedDeclarations": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noPropertyAccessFromIndexSignature": false,
+    "tsBuildInfoFile": "../node_modules/.cache/tsconfig.config.tsbuildinfo"
+  },
+  "include": ["*.ts", "*.js"]
+}

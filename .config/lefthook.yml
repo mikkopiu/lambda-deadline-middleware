@@ -6,9 +6,13 @@ commit-msg:
 pre-commit:
   commands:
     format:
-      run: pnpm exec oxfmt {staged_files}
+      run: pnpm exec oxfmt --threads 1 {staged_files}
       stage_fixed: true
-      glob: "*.{ts,js,json,md,yml,yaml}"
+      glob: "*.{ts,js,json,json5,jsonc}"
+    format-slow:
+      run: pnpm exec oxfmt --threads 1 {staged_files}
+      stage_fixed: true
+      glob: "*.{md,yml,yaml,toml}"
     oxlint:
       run: pnpm exec oxlint --fix {staged_files}
       stage_fixed: true
