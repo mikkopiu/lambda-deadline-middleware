@@ -70,7 +70,7 @@ flowchart LR
 
 ## Installation
 
-```bash
+```sh
 npm install lambda-deadline-middleware
 ```
 
