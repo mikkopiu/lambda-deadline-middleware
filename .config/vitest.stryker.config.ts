@@ -19,18 +19,5 @@ export default defineConfig({
     include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],
     pool: "threads",
     isolate: false,
-    deps: {
-      optimizer: {
-        ssr: {
-          enabled: true,
-          include: [
-            "@aws-sdk/client-dynamodb",
-            "@aws-sdk/client-s3",
-            "@aws-sdk/client-sqs",
-            "@smithy/types",
-          ],
-        },
-      },
-    },
   },
 });

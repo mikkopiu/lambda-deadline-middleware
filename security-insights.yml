@@ -6,8 +6,8 @@
 
 header:
   schema-version: 2.2.0
-  last-updated: "2026-06-24"
-  last-reviewed: "2026-06-24"
+  last-updated: "2026-06-27"
+  last-reviewed: "2026-06-27"
   url: https://raw.githubusercontent.com/mikkopiu/lambda-deadline-middleware/main/security-insights.yml
   comment: >-
     Zero-dependency AWS SDK v3 middleware for automatic Lambda deadline
@@ -95,12 +95,12 @@ repository:
         comment: >-
           Supply chain integrity verified through npm trusted publishing (OIDC,
           no long-lived tokens), SLSA L3 provenance, and CycloneDX SBOM. SAST
-          coverage provided by Opengrep (pattern-based) and oxlint
-          (rule-based). SCA coverage provided by Trivy (dependency
-          vulnerability scanning) and Renovate (automated dependency updates).
-          CI/CD workflow correctness validated by actionlint. No formal
-          third-party security audit has been conducted.
-        date: "2026-06-24"
+          coverage provided by Opengrep (pattern-based), oxlint
+          (rule-based), and ShellCheck (shell scripts). SCA coverage provided
+          by Trivy (dependency vulnerability scanning) and Renovate (automated
+          dependency updates). CI/CD workflow correctness validated by
+          actionlint. No formal third-party security audit has been conducted.
+        date: "2026-06-27"
 
     tools:
       - name: Opengrep
@@ -205,6 +205,28 @@ repository:
         comment: >-
           Scans git history for leaked secrets. CI uses gitleaks-action; local
           dev uses digest-pinned container (docker.io/zricethezav/gitleaks).
+
+      - name: ShellCheck
+        type: SAST
+        version: "0.11.0"
+        rulesets:
+          - default
+        integration:
+          adhoc: true
+          ci: true
+          release: false
+        results:
+          ci:
+            name: ShellCheck shell script linting
+            location: https://github.com/mikkopiu/lambda-deadline-middleware/actions
+            predicate-uri: https://github.com/koalaman/shellcheck
+            comment: >-
+              Static analysis of shell scripts. Runs in CI and locally via
+              digest-pinned container (docker.io/koalaman/shellcheck).
+        comment: >-
+          Static analysis tool for shell scripts. Detects common bugs, pitfalls,
+          and portability issues in bash/sh scripts. Runs via digest-pinned
+          container (docker.io/koalaman/shellcheck) both locally and in CI.
 
       - name: oxlint
         type: SAST

@@ -4,7 +4,12 @@
 /** @type {import('knip').KnipConfig} */
 export default {
   project: ["src/**/*.ts"],
-  ignoreBinaries: ["scripts/ensure-opengrep.sh", "podman"],
+  ignoreBinaries: [
+    "scripts/ensure-opengrep.sh",
+    "scripts/trivy.sh",
+    "scripts/actionlint.sh",
+    "scripts/shellcheck.sh",
+  ],
   ignoreDependencies: [
     "@commitlint/cli",
     "@commitlint/config-conventional",

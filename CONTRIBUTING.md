@@ -63,6 +63,9 @@ pnpm sca
 
 # CI workflow linting (actionlint, requires podman)
 pnpm actionlint
+
+# Shell script linting (shellcheck, requires podman)
+pnpm shellcheck
 ```
 
 Gitleaks runs automatically via the lefthook pre-commit hook.

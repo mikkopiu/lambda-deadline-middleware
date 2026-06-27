@@ -275,6 +275,19 @@ jobs:
           sarif_file: reports/actionlint-results.sarif
           category: actionlint
 
+  shellcheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: "Harden Runner"
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Run shellcheck
+        run: scripts/shellcheck.sh
+
   reuse:
     runs-on: ubuntu-latest
     permissions:
