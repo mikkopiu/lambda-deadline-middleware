@@ -29,6 +29,15 @@
       pinDigests: true,
     },
     {
+      // GHCR doesn't provide releaseTimestamp (Renovate only supports Docker Hub
+      // for this — see https://github.com/renovatebot/renovate/issues/39064).
+      // Without it, minimumReleaseAge can never pass.
+      matchManagers: ["custom.regex"],
+      matchDatasources: ["docker"],
+      matchDepPatterns: ["^ghcr\\.io/"],
+      minimumReleaseAge: null,
+    },
+    {
       // pinDigests is not applicable to github-releases in plain version strings
       // and causes "tag not found" errors due to extractVersionTemplate stripping the v prefix
       matchManagers: ["custom.regex"],
