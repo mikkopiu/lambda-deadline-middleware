@@ -33,24 +33,17 @@ function extractHandler() {
  * For any SDK request dispatched when no deadline signal is stored,
  * the middleware passes the request through unmodified.
  */
+const arbHostname = fc.string({ minLength: 1, maxLength: 50 });
+const arbPath = fc.string({ minLength: 1, maxLength: 100 });
+const arbInput = fc.record({ hostname: arbHostname, path: arbPath });
+const arbRequest = fc.record({
+  method: fc.constantFrom("GET", "POST", "PUT", "DELETE"),
+  hostname: arbHostname,
+  path: arbPath,
+});
+
 describe("No-op outside Lambda context", () => {
-  test.prop(
-    [
-      fc.record({
-        input: fc.record({
-          hostname: fc.string({ minLength: 1, maxLength: 50 }),
-          path: fc.string({ minLength: 1, maxLength: 100 }),
-        }),
-        request: fc.record({
-          method: fc.constantFrom("GET", "POST", "PUT", "DELETE"),
-          hostname: fc.string({ minLength: 1, maxLength: 50 }),
-          path: fc.string({ minLength: 1, maxLength: 100 }),
-        }),
-      }),
-      fc.anything(),
-    ],
-    { numRuns: 100 },
-  )(
+  test.prop([fc.record({ input: arbInput, request: arbRequest }), fc.anything()], { numRuns: 100 })(
     "middleware passes args through unmodified and returns next's result when no signal is stored",
     async (args, nextResult) => {
       const middleware = extractHandler();
