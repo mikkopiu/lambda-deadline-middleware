@@ -10,7 +10,7 @@
 set -euo pipefail
 
 # renovate: datasource=docker depName=ghcr.io/aquasecurity/trivy
-IMAGE="ghcr.io/aquasecurity/trivy:0.71.0@sha256:016eae51fdcf989332a5404af7e8f625cd5d95d7c0907a221d080a996f556500"
+IMAGE="ghcr.io/aquasecurity/trivy:0.71.2@sha256:f5d0e600ecda7449e2a9b272805aef698631d3bb3f3a739a750de2c6819acdc9"
 
 if [[ "${1:-}" == "full" ]]; then
   exec podman run --rm \
