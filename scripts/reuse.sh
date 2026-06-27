@@ -8,6 +8,6 @@
 set -euo pipefail
 
 # renovate: datasource=docker depName=docker.io/fsfe/reuse
-IMAGE="docker.io/fsfe/reuse:v6.2.0@sha256:c65a00f628cc5a9bb2dcb2c84f860bd34da567f9b77584eaa6a93d2dfb134a0c"
+IMAGE="docker.io/fsfe/reuse:6.2.0@sha256:85462a75c0f8efda09ddd190b92816b70e7662577c8427429e11e1b9f25a992e"
 
 exec podman run --rm -v "$(pwd):/data:Z" "${IMAGE}" "$@"
