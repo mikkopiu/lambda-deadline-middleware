@@ -18,15 +18,13 @@ pre-commit:
       stage_fixed: true
       glob: "*.{ts,js}"
     gitleaks:
-      run: >-
-        podman run --rm -v "$(pwd):/repo:Z" -w /repo
-        docker.io/zricethezav/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
-        protect --staged --no-banner --config .config/.gitleaks.toml
+      run: scripts/gitleaks.sh protect --staged --no-banner --config .config/.gitleaks.toml
     actionlint:
       glob: ".github/workflows/*.yml"
-      run: >-
-        podman run --rm -w /repo -v "$(pwd):/repo:Z"
-        docker.io/rhysd/actionlint:1.7.12@sha256:9d36088643581e728c969f35141f88139fec77280b2be23c1f66f8e40e1025e7
+      run: scripts/actionlint.sh
+    shellcheck:
+      glob: "scripts/*.sh"
+      run: scripts/shellcheck.sh {staged_files}
 
 pre-push:
   commands:
@@ -34,9 +32,7 @@ pre-push:
       run: pnpm run sast:check
     reuse:
       run: >-
-        podman run --rm -v "$(pwd):/data:Z"
-        docker.io/fsfe/reuse:v6.2.0@sha256:c65a00f628cc5a9bb2dcb2c84f860bd34da567f9b77584eaa6a93d2dfb134a0c
-        annotate
+        scripts/reuse.sh annotate
         --copyright "lambda-deadline-middleware contributors"
         --license MIT
         --skip-existing

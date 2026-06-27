@@ -59,39 +59,28 @@
       matchDepNames: ["gitleaks/gitleaks", "docker.io/zricethezav/gitleaks"],
       groupName: "gitleaks",
     },
+    {
+      // Group all shellcheck updates into one PR
+      matchManagers: ["custom.regex"],
+      matchDepNames: ["koalaman/shellcheck", "docker.io/koalaman/shellcheck"],
+      groupName: "shellcheck",
+    },
+    {
+      // Group all reuse updates into one PR
+      matchManagers: ["custom.regex"],
+      matchDepNames: ["docker.io/fsfe/reuse"],
+      groupName: "reuse",
+    },
   ],
   customManagers: [
-    // -- Container images (digest-pinned, local dev) --------------------------
+    // -- Container images in scripts/*.sh (digest-pinned, local dev) ----------
     {
       customType: "regex",
-      description: "actionlint container image (local dev)",
-      managerFilePatterns: ["/\\.config/lefthook\\.yml$/", "/package\\.json$/"],
+      description: "Container images in scripts/ (renovate comment format)",
+      managerFilePatterns: ["/scripts/.*\\.sh$/"],
       matchStrings: [
-        "docker\\.io/rhysd/actionlint:(?<currentValue>[0-9.]+)@(?<currentDigest>sha256:[a-f0-9]{64})",
+        '# renovate: datasource=docker depName=(?<depName>[^\\s]+)\\nIMAGE="[^:]+:(?<currentValue>[^@"]+)@(?<currentDigest>sha256:[a-f0-9]{64})"',
       ],
-      depNameTemplate: "docker.io/rhysd/actionlint",
-      datasourceTemplate: "docker",
-      versioningTemplate: "semver",
-    },
-    {
-      customType: "regex",
-      description: "gitleaks container image (local dev)",
-      managerFilePatterns: ["/\\.config/lefthook\\.yml$/"],
-      matchStrings: [
-        "docker\\.io/zricethezav/gitleaks:(?<currentValue>v[0-9.]+)@(?<currentDigest>sha256:[a-f0-9]{64})",
-      ],
-      depNameTemplate: "docker.io/zricethezav/gitleaks",
-      datasourceTemplate: "docker",
-      versioningTemplate: "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
-    },
-    {
-      customType: "regex",
-      description: "Trivy container image (local dev)",
-      managerFilePatterns: ["/package\\.json$/"],
-      matchStrings: [
-        "ghcr\\.io/aquasecurity/trivy:(?<currentValue>[0-9.]+)@(?<currentDigest>sha256:[a-f0-9]{64})",
-      ],
-      depNameTemplate: "ghcr.io/aquasecurity/trivy",
       datasourceTemplate: "docker",
       versioningTemplate: "semver",
     },
@@ -157,6 +146,16 @@
       managerFilePatterns: ["/security-insights\\.yml$/"],
       matchStrings: ['- name: Gitleaks[\\s\\S]*?version:\\s*"(?<currentValue>[0-9.]+)"'],
       depNameTemplate: "gitleaks/gitleaks",
+      datasourceTemplate: "github-releases",
+      versioningTemplate: "semver",
+      extractVersionTemplate: "^v(?<version>.*)$",
+    },
+    {
+      customType: "regex",
+      description: "ShellCheck version in security-insights.yml",
+      managerFilePatterns: ["/security-insights\\.yml$/"],
+      matchStrings: ['- name: ShellCheck[\\s\\S]*?version:\\s*"(?<currentValue>[0-9.]+)"'],
+      depNameTemplate: "koalaman/shellcheck",
       datasourceTemplate: "github-releases",
       versioningTemplate: "semver",
       extractVersionTemplate: "^v(?<version>.*)$",
