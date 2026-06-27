@@ -1,6 +1,4 @@
 {
-  // Renovate configuration for lambda-deadline-middleware
-  // https://docs.renovatebot.com/configuration-options/
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   configMigration: true,
   extends: ["config:recommended", ":semanticCommits", ":semanticCommitTypeAll(chore)"],
@@ -29,60 +27,48 @@
       pinDigests: true,
     },
     {
-      // GHCR doesn't provide releaseTimestamp (Renovate only supports Docker Hub
-      // for this — see https://github.com/renovatebot/renovate/issues/39064).
-      // Without it, minimumReleaseAge can never pass.
       matchManagers: ["custom.regex"],
       matchDatasources: ["docker"],
-      matchDepPatterns: ["^ghcr\\.io/"],
       minimumReleaseAge: null,
+      matchDepNames: ["/^ghcr\\.io//"],
     },
     {
-      // pinDigests is not applicable to github-releases in plain version strings
-      // and causes "tag not found" errors due to extractVersionTemplate stripping the v prefix
       matchManagers: ["custom.regex"],
       matchDatasources: ["github-releases"],
       pinDigests: false,
     },
     {
-      // Group all opengrep updates into one PR
       matchManagers: ["custom.regex"],
       matchDepNames: ["opengrep/opengrep"],
       groupName: "opengrep",
     },
     {
-      // Group all actionlint updates into one PR
       matchManagers: ["custom.regex"],
       matchDepNames: ["rhysd/actionlint", "docker.io/rhysd/actionlint"],
       groupName: "actionlint",
     },
     {
-      // Group all trivy updates into one PR
       matchManagers: ["custom.regex"],
       matchDepNames: ["aquasecurity/trivy", "ghcr.io/aquasecurity/trivy"],
       groupName: "trivy",
     },
     {
-      // Group all gitleaks updates into one PR
       matchManagers: ["custom.regex"],
       matchDepNames: ["gitleaks/gitleaks", "docker.io/zricethezav/gitleaks"],
       groupName: "gitleaks",
     },
     {
-      // Group all shellcheck updates into one PR
       matchManagers: ["custom.regex"],
       matchDepNames: ["koalaman/shellcheck", "docker.io/koalaman/shellcheck"],
       groupName: "shellcheck",
     },
     {
-      // Group all reuse updates into one PR
       matchManagers: ["custom.regex"],
       matchDepNames: ["docker.io/fsfe/reuse"],
       groupName: "reuse",
     },
   ],
   customManagers: [
-    // -- Container images in scripts/*.sh (digest-pinned, local dev) ----------
     {
       customType: "regex",
       description: "Container images in scripts/ (renovate comment format)",
@@ -93,8 +79,6 @@
       datasourceTemplate: "docker",
       versioningTemplate: "semver",
     },
-
-    // -- CI tool versions -------------------------------------------------------
     {
       customType: "regex",
       description: "Actionlint version in CI workflow",
@@ -105,8 +89,6 @@
       versioningTemplate: "semver",
       extractVersionTemplate: "^v(?<version>.*)$",
     },
-
-    // -- Opengrep version in ensure-opengrep.sh script -------------------------
     {
       customType: "regex",
       description: "Opengrep version in ensure-opengrep.sh",
@@ -117,8 +99,6 @@
       versioningTemplate: "semver",
       extractVersionTemplate: "^v(?<version>.*)$",
     },
-
-    // -- security-insights.yml version declarations ---------------------------
     {
       customType: "regex",
       description: "Opengrep version in security-insights.yml",
