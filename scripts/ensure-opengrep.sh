@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-EXPECTED_VERSION="1.22.0"
+EXPECTED_VERSION="1.23.0"
 CONFIG_FLAGS=(--config p/typescript --config p/security-audit --config .config/opengrep-rules.yml --taint-intrafile)
 INSTALL_DIR="${HOME}/.opengrep/cli/v${EXPECTED_VERSION}"
 BINARY="${INSTALL_DIR}/opengrep"

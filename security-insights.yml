@@ -105,7 +105,7 @@ repository:
     tools:
       - name: Opengrep
         type: SAST
-        version: "1.22.0"
+        version: "1.23.0"
         rulesets:
           - p/typescript
           - p/security-audit
