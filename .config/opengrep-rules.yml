@@ -85,3 +85,54 @@ rules:
       supported and adds a pointless step.
     languages: [yaml]
     severity: ERROR
+
+  - id: no-tls-bypass
+    patterns:
+      - pattern: "rejectUnauthorized: false"
+    message: Do not disable TLS certificate verification
+    languages: [typescript, javascript]
+    severity: ERROR
+
+  - id: prototype-pollution-loop
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $SMTH = $SMTH[$A]
+          - pattern: |
+              $SMTH = $SMTH[$A] = ...
+          - pattern: |
+              $SMTH = $SMTH[$A] && $Z
+          - pattern: |
+              $SMTH = $SMTH[$A] || $Z
+      - pattern-either:
+          - pattern-inside: |
+              for(...) {
+                ...
+              }
+          - pattern-inside: |
+              while(...) {
+                ...
+              }
+          - pattern-inside: |
+              $X.forEach(function $NAME(...) {
+                ...
+              })
+      - pattern-not-inside: |
+          for(var $A = $S; ...; ...) {...}
+      - pattern-not-inside: |
+          for($A = $S; ...; ...) {...}
+      - pattern-not-inside: |
+          $X.forEach(function $NAME($OBJ, $A,...) {...})
+      - metavariable-pattern:
+          metavariable: $A
+          patterns:
+            - pattern-not: '"..."'
+            - pattern-not: |
+                `...${...}...`
+            - pattern-not: |
+                ($A: float)
+    message: >-
+      Possible prototype pollution via dynamic property assignment in a loop.
+      Use Map, Object.create(null), or validate keys against __proto__/constructor.
+    languages: [typescript, javascript]
+    severity: WARNING

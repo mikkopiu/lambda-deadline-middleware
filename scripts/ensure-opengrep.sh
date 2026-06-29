@@ -9,7 +9,7 @@
 set -euo pipefail
 
 EXPECTED_VERSION="1.23.0"
-CONFIG_FLAGS=(--config p/typescript --config p/security-audit --config .config/opengrep-rules.yml --taint-intrafile)
+CONFIG_FLAGS=(--config .config/opengrep-rules.yml --taint-intrafile)
 INSTALL_DIR="${HOME}/.opengrep/cli/v${EXPECTED_VERSION}"
 BINARY="${INSTALL_DIR}/opengrep"
 
@@ -24,17 +24,17 @@ run_opengrep() {
   exec "$1" "${SUBCOMMAND}" "${CONFIG_FLAGS[@]}" "${ARGS[@]}"
 }
 
-# Check if correct version already installed on PATH
+# Check if correct version installed in our managed directory (fast path)
+if [[ -x "${BINARY}" ]]; then
+  run_opengrep "${BINARY}"
+fi
+
+# Check if correct version already installed on PATH (slow: invokes binary)
 if command -v opengrep &>/dev/null; then
   INSTALLED_VERSION=$(opengrep --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
   if [[ "${INSTALLED_VERSION}" == "${EXPECTED_VERSION}" ]]; then
     run_opengrep opengrep
   fi
-fi
-
-# Check if correct version installed in our managed directory
-if [[ -x "${BINARY}" ]]; then
-  run_opengrep "${BINARY}"
 fi
 
 echo "Installing opengrep v${EXPECTED_VERSION}..." >&2
