@@ -74,7 +74,7 @@
     "oxc-transform": "^0.137.0",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.70.0",
-    "oxlint-tsgolint": "^0.23.0",
+    "oxlint-tsgolint": "^0.25.0",
     "semantic-release": "25.0.5",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
