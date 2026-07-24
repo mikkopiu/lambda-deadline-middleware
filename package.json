@@ -60,7 +60,7 @@
     "@commitlint/config-conventional": "^21.0.2",
     "@fast-check/vitest": "^0.4.1",
     "@semantic-release/commit-analyzer": "13.0.1",
-    "@semantic-release/github": "12.0.8",
+    "@semantic-release/github": "12.0.9",
     "@semantic-release/npm": "13.1.5",
     "@semantic-release/release-notes-generator": "14.1.1",
     "@smithy/types": "^4.15.0",
@@ -75,7 +75,7 @@
     "oxfmt": "^0.56.0",
     "oxlint": "^1.70.0",
     "oxlint-tsgolint": "^0.23.0",
-    "semantic-release": "25.0.5",
+    "semantic-release": "25.0.8",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
